@@ -95,12 +95,17 @@ def test_cancel_without_live_turn_keeps_session() -> None:
     assert router.get_chat(chat_id).external_session_id == "ses-keep"
 
 
-def test_copilot_stub() -> None:
-    router, _ = _router(FakeEngine("claude", []))
-    router.engines["copilot"] = FakeEngine("copilot", [])
+def test_copilot_followup_uses_session() -> None:
+    engine = FakeEngine(
+        "copilot",
+        [
+            [Event(type="session", session_id="cp-1"), Event(type="text", text="ok"), Event(type="done")],
+            [Event(type="text", text="again"), Event(type="done", session_id="cp-1")],
+        ],
+    )
+    router, _ = _router(engine)
     chat_id = router.start_chat("copilot", cwd=".")
-    try:
-        list(router.send(chat_id, "hi"))
-        raise AssertionError("stub should raise")
-    except NotImplementedError:
-        pass
+    list(router.send(chat_id, "hi"))
+    list(router.send(chat_id, "more"))
+    assert engine.calls[0]["session_id"] is None
+    assert engine.calls[1]["session_id"] == "cp-1"

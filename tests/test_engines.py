@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from dint.engines import ClaudeEngine, CodexEngine, GrokEngine, parse_claude_line, parse_codex_line
+from dint.engines import (
+    ClaudeEngine,
+    CodexEngine,
+    CopilotEngine,
+    GrokEngine,
+    parse_claude_line,
+    parse_codex_line,
+    parse_copilot_line,
+)
 
 
 def test_cli_argv_resume() -> None:
@@ -16,6 +24,11 @@ def test_cli_argv_resume() -> None:
     assert "--resume" not in g
     resumed = grok.argv("hi", r"C:\proj", "ses-g")
     assert resumed[-2:] == ["--resume", "ses-g"]
+    copilot = CopilotEngine(binary="copilot")
+    c = copilot.argv("hi", r"C:\proj", None)
+    assert "-p" in c and "--output-format" in c and "json" in c
+    assert not any(a.startswith("--resume") for a in c)
+    assert "--resume=ses-c" in copilot.argv("hi", r"C:\proj", "ses-c")
 
 
 def test_claude_resume_session_and_tools() -> None:
@@ -46,3 +59,18 @@ def test_codex_thread_id_and_followup_shape() -> None:
     )
     assert tool[0].type == "tool"
     assert parse_codex_line('{"type":"turn.completed"}')[0].type == "done"
+
+
+def test_copilot_session_and_tools() -> None:
+    events = parse_copilot_line(
+        '{"type":"assistant.message","sessionId":"cp-1","data":{"content":"hello world","toolRequests":[{"name":"view"}]}}'
+    )
+    events += parse_copilot_line(
+        '{"type":"tool.execution_start","data":{"toolName":"view"},"sessionId":"cp-1"}'
+    )
+    events += parse_copilot_line(
+        '{"type":"result","sessionId":"cp-1","exitCode":0}'
+    )
+    assert any(e.type == "text" and "hello" in e.text for e in events)
+    assert any(e.type == "tool" for e in events)
+    assert events[-1].type == "done" and events[-1].session_id == "cp-1"

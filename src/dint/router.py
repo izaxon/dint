@@ -8,7 +8,6 @@ from dint.logbook import ChatLog
 from dint.types import Chat, Engine, Event
 
 ENGINES = {"claude", "codex", "grok", "copilot"}
-STUBS = {"copilot"}
 
 
 class Router:
@@ -37,8 +36,6 @@ class Router:
         if chat_id in self._active:
             raise RuntimeError(f"chat {chat_id} already has a running turn")
         chat = self._load(chat_id)
-        if chat.engine in STUBS:
-            raise NotImplementedError(f"{chat.engine} adapter is a stub")
         engine = self.engines[chat.engine]
         self.store.post(chat, "user", prompt)
         self._active[chat_id] = engine

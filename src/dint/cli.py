@@ -9,11 +9,14 @@ from dint.router import Router
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="dint", description="Chat router over Claude Code / Codex. Logbook is the ledger.")
+    p = argparse.ArgumentParser(
+        prog="dint",
+        description="Chat router over Claude Code, Codex, Grok, and Copilot. Logbook is the ledger.",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("start")
-    s.add_argument("engine", choices=["claude", "codex", "grok"])
+    s.add_argument("engine", choices=["claude", "codex", "grok", "copilot"])
     s.add_argument("cwd", nargs="?", default=".")
 
     s = sub.add_parser("send")
