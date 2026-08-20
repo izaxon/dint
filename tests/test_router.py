@@ -54,7 +54,12 @@ def test_new_chat_and_followup_keeps_session() -> None:
     list(router.send(chat_id, "again"))
     assert engine.calls[0]["session_id"] is None
     assert engine.calls[1]["session_id"] == "ses-1"
-    assert [t["role"] for t in router.list_turns(chat_id)] == ["user", "assistant", "user", "assistant"]
+    assert [t["role"] for t in router.list_turns(chat_id)] == ["user", "bot", "user", "bot"]
+    hist = router.store.list_messages(chat_id)
+    ids = [h.get("id") for h in hist]
+    parents = [h.get("parentId") for h in hist]
+    assert parents[0] is None
+    assert parents[1] == ids[0]
 
 
 def test_crash_reload_does_not_lose_session_id() -> None:

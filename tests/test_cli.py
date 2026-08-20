@@ -15,7 +15,7 @@ def test_cli_start_and_list(monkeypatch, capsys) -> None:
     )
     router = Router(
         store=ChatLog(MemoryLogbook(), project="dint"),
-        engines={"claude": engine, "codex": FakeEngine("codex", [])},
+        engines={"claude": engine, "codex": FakeEngine("codex", []), "grok": FakeEngine("grok", [])},
     )
     monkeypatch.setattr("dint.cli.Router", lambda: router)
 

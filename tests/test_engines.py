@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dint.engines import ClaudeEngine, CodexEngine, parse_claude_line, parse_codex_line
+from dint.engines import ClaudeEngine, CodexEngine, GrokEngine, parse_claude_line, parse_codex_line
 
 
 def test_cli_argv_resume() -> None:
@@ -10,6 +10,12 @@ def test_cli_argv_resume() -> None:
     codex = CodexEngine(binary="codex")
     assert "resume" not in codex.argv("hi", r"C:\proj", None)
     assert codex.argv("hi", r"C:\proj", "thr_1")[:4] == ["codex", "exec", "resume", "thr_1"]
+    grok = GrokEngine(binary="grok")
+    g = grok.argv("hi", r"C:\proj", None)
+    assert g[:1] == ["grok"] and "-p" in g and "streaming-json" in g
+    assert "--resume" not in g
+    resumed = grok.argv("hi", r"C:\proj", "ses-g")
+    assert resumed[-2:] == ["--resume", "ses-g"]
 
 
 def test_claude_resume_session_and_tools() -> None:

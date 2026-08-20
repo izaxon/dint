@@ -7,8 +7,8 @@ from dint.engines import default_engines
 from dint.logbook import ChatLog
 from dint.types import Chat, Engine, Event
 
-ENGINES = {"claude", "codex", "copilot", "grok"}
-STUBS = {"copilot", "grok"}
+ENGINES = {"claude", "codex", "grok", "copilot"}
+STUBS = {"copilot"}
 
 
 class Router:
@@ -64,7 +64,7 @@ class Router:
             self._active.pop(chat_id, None)
             text = "\n".join(assistant).strip()
             if text:
-                self.store.post(chat, "assistant", text)
+                self.store.post(chat, "bot", text)
             if error:
                 self.store.post(chat, "error", error)
 

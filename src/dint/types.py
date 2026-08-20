@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 EventType = Literal["session", "text", "tool", "need_approval", "done", "error"]
-Role = Literal["header", "session", "user", "assistant", "tool", "error"]
+Role = Literal["header", "session", "user", "bot", "tool", "error"]
 
 
 @dataclass(frozen=True)
@@ -24,10 +24,12 @@ class Chat:
     engine: str
     cwd: str
     external_session_id: str | None = None
+    header_id: str | None = None
+    tail_id: str | None = None
 
 
 class Engine(Protocol):
-    """One coding-agent CLI (Claude Code, Codex, …)."""
+    """One coding-agent CLI (Claude Code, Codex, Grok, …)."""
 
     name: str
 
@@ -39,10 +41,10 @@ class Engine(Protocol):
 
 
 class Logbook(Protocol):
-    """Codicent Logbook wire: MCP PostMessage / GetMessages (append-only)."""
+    """Codicent Logbook wire: PostMessage / GetMessages / GetMessageHistory."""
 
-    def post_message(self, message: str) -> dict:
-        """Post a new message. Never pass parentId."""
+    def post_message(self, message: str, parent_id: str | None = None) -> dict:
+        """Post a message. parent_id chains it onto the conversation (Codicent ParentId)."""
 
     def get_messages(
         self,
@@ -52,3 +54,6 @@ class Logbook(Protocol):
         length: int = 100,
     ) -> list[dict]:
         """List messages, optionally filtered (e.g. #chat-<id>)."""
+
+    def get_history(self, message_id: str) -> list[dict]:
+        """Full conversation chain (GetMessageHistory / OriginalMessageId)."""

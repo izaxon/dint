@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("start")
-    s.add_argument("engine", choices=["claude", "codex"])
+    s.add_argument("engine", choices=["claude", "codex", "grok"])
     s.add_argument("cwd", nargs="?", default=".")
 
     s = sub.add_parser("send")

@@ -21,8 +21,11 @@ class McpLogbook:
         self._rid = 0
         self._ready = False
 
-    def post_message(self, message: str) -> dict:
-        result = self._tool("post_message", {"message": message, "userId": "dint"})
+    def post_message(self, message: str, parent_id: str | None = None) -> dict:
+        args: dict[str, Any] = {"message": message, "userId": "dint"}
+        if parent_id:
+            args["parentId"] = parent_id
+        result = self._tool("post_message", args)
         return result if isinstance(result, dict) else {"id": str(result)}
 
     def get_messages(
@@ -36,6 +39,14 @@ class McpLogbook:
         if search:
             args["search"] = search
         result = self._tool("get_messages", args)
+        if isinstance(result, list):
+            return [m for m in result if isinstance(m, dict)]
+        if isinstance(result, dict):
+            return list(result.get("messages") or result.get("items") or [])
+        return []
+
+    def get_history(self, message_id: str) -> list[dict]:
+        result = self._tool("get_message_history", {"messageId": message_id})
         if isinstance(result, list):
             return [m for m in result if isinstance(m, dict)]
         if isinstance(result, dict):

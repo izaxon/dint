@@ -1,4 +1,4 @@
-"""Logbook over REST `/api/messages` — same data as MCP PostMessage / GetMessages."""
+"""Logbook over REST — PostMessage, GetMessages, GetMessageHistory."""
 
 from __future__ import annotations
 
@@ -18,8 +18,11 @@ class RestLogbook:
         self.url = url.rstrip("/")
         self.api_key = api_key
 
-    def post_message(self, message: str) -> dict:
-        data = self._request("POST", "/api/messages", {"content": message, "userId": "dint"})
+    def post_message(self, message: str, parent_id: str | None = None) -> dict:
+        body: dict[str, Any] = {"content": message, "userId": "dint"}
+        if parent_id:
+            body["parentId"] = parent_id
+        data = self._request("POST", "/api/messages", body)
         if not isinstance(data, dict):
             raise LogbookError(f"unexpected post response: {data!r}")
         return data
@@ -35,6 +38,14 @@ class RestLogbook:
         if search:
             q["search"] = search
         data = self._request("GET", "/api/messages?" + urllib.parse.urlencode(q))
+        if isinstance(data, list):
+            return [m for m in data if isinstance(m, dict)]
+        if isinstance(data, dict):
+            return list(data.get("messages") or data.get("items") or [])
+        return []
+
+    def get_history(self, message_id: str) -> list[dict]:
+        data = self._request("GET", f"/api/messages/{urllib.parse.quote(message_id)}/history")
         if isinstance(data, list):
             return [m for m in data if isinstance(m, dict)]
         if isinstance(data, dict):
