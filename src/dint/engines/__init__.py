@@ -1,8 +1,6 @@
-from __future__ import annotations
-
-from dint.engines.base import StubEngine
-from dint.engines.claude import ClaudeEngine
-from dint.engines.codex import CodexEngine
+from dint.engines.base import CliEngine, StubEngine
+from dint.engines.claude import ClaudeEngine, parse_claude_line
+from dint.engines.codex import CodexEngine, parse_codex_line
 from dint.types import Engine
 
 
@@ -13,3 +11,14 @@ def default_engines() -> dict[str, Engine]:
         "copilot": StubEngine("copilot"),
         "grok": StubEngine("grok"),
     }
+
+
+__all__ = [
+    "ClaudeEngine",
+    "CliEngine",
+    "CodexEngine",
+    "StubEngine",
+    "default_engines",
+    "parse_claude_line",
+    "parse_codex_line",
+]

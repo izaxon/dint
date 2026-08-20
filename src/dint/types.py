@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterator, Literal
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
-EngineName = Literal["claude", "codex", "copilot", "grok"]
-EventType = Literal["text", "tool", "need_approval", "done", "error"]
+EventType = Literal["session", "text", "tool", "need_approval", "done", "error"]
 Role = Literal["header", "session", "user", "assistant", "tool", "error"]
 
 
 @dataclass(frozen=True)
 class Event:
+    """Normalized stream from any engine CLI."""
+
     type: EventType
     text: str = ""
     session_id: str | None = None
     tool: str | None = None
-    data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -25,30 +26,29 @@ class Chat:
     external_session_id: str | None = None
 
 
-@dataclass
-class TurnRecord:
-    chat_id: str
-    engine: str
-    role: Role
-    cwd: str
-    external_session_id: str | None
-    text: str
-    ts: str
-    tags: list[str] = field(default_factory=list)
-    message_id: str | None = None
+class Engine(Protocol):
+    """One coding-agent CLI (Claude Code, Codex, …)."""
 
-
-class Engine:
     name: str
 
-    def send(
-        self,
-        prompt: str,
-        *,
-        cwd: str,
-        session_id: str | None,
-    ) -> Iterator[Event]:
-        raise NotImplementedError
+    def send(self, prompt: str, *, cwd: str, session_id: str | None) -> Iterator[Event]:
+        """Run one turn. Pass session_id to resume."""
 
     def cancel(self) -> None:
-        raise NotImplementedError
+        """Stop the in-flight turn, if any."""
+
+
+class Logbook(Protocol):
+    """Codicent Logbook wire: MCP PostMessage / GetMessages (append-only)."""
+
+    def post_message(self, message: str) -> dict:
+        """Post a new message. Never pass parentId."""
+
+    def get_messages(
+        self,
+        search: str | None = None,
+        *,
+        start: int = 0,
+        length: int = 100,
+    ) -> list[dict]:
+        """List messages, optionally filtered (e.g. #chat-<id>)."""
