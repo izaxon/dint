@@ -41,8 +41,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.cmd == "send":
             try:
+                printer = EventPrinter()
                 for event in router.send(args.chat_id, " ".join(args.prompt)):
-                    _print(event)
+                    printer.emit(event)
+                printer.finish()
             except KeyboardInterrupt:
                 router.cancel(args.chat_id)
                 print("cancelled", file=sys.stderr)
@@ -71,18 +73,36 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-def _print(event: object) -> None:
-    kind = getattr(event, "type", None)
-    text = getattr(event, "text", "") or ""
-    if kind == "text" and text:
-        print(text, flush=True)
-    elif kind == "tool":
-        print(f"[tool] {getattr(event, 'tool', None) or text}", flush=True)
-    elif kind == "error":
-        print(f"[error] {text}", file=sys.stderr, flush=True)
-    elif kind == "done":
-        sid = getattr(event, "session_id", None)
-        print(f"[done]{f' session={sid}' if sid else ''}", flush=True)
+class EventPrinter:
+    """Stream token chunks inline; only start a new line for tools/done/errors."""
+
+    def __init__(self) -> None:
+        self._mid_line = False
+
+    def emit(self, event: object) -> None:
+        kind = getattr(event, "type", None)
+        text = getattr(event, "text", "") or ""
+        if kind == "text" and text:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            self._mid_line = not text.endswith("\n")
+            return
+        self._break()
+        if kind == "tool":
+            print(f"[tool] {getattr(event, 'tool', None) or text}", flush=True)
+        elif kind == "error":
+            print(f"[error] {text}", file=sys.stderr, flush=True)
+        elif kind == "done":
+            sid = getattr(event, "session_id", None)
+            print(f"[done]{f' session={sid}' if sid else ''}", flush=True)
+
+    def finish(self) -> None:
+        self._break()
+
+    def _break(self) -> None:
+        if self._mid_line:
+            print(flush=True)
+            self._mid_line = False
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ class Router:
                 yield event
         finally:
             self._active.pop(chat_id, None)
-            text = "\n".join(assistant).strip()
+            text = "".join(assistant).strip()
             if text:
                 self.store.post(chat, "bot", text)
             if error:

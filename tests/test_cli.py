@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dint.cli import main
+from dint.cli import EventPrinter, main
 from dint.logbook import ChatLog
 from dint.router import Router
 from dint.types import Event
@@ -29,3 +29,13 @@ def test_cli_start_and_list(monkeypatch, capsys) -> None:
     assert "hello" in out and "ok" in out
     assert main(["show", chat_id]) == 0
     assert "ses-cli" in capsys.readouterr().out
+
+
+def test_cli_streams_tokens_inline(capsys) -> None:
+    printer = EventPrinter()
+    printer.emit(Event(type="text", text="He"))
+    printer.emit(Event(type="text", text="j"))
+    printer.emit(Event(type="done", session_id="g1"))
+    out = capsys.readouterr().out
+    assert out.startswith("Hej\n")
+    assert "[done] session=g1" in out

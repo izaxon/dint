@@ -95,6 +95,18 @@ def test_cancel_without_live_turn_keeps_session() -> None:
     assert router.get_chat(chat_id).external_session_id == "ses-keep"
 
 
+def test_token_chunks_join_without_newlines() -> None:
+    engine = FakeEngine(
+        "grok",
+        [[Event(type="text", text="He"), Event(type="text", text="j"), Event(type="done", session_id="g1")]],
+    )
+    router, _ = _router(engine)
+    chat_id = router.start_chat("grok", cwd=".")
+    list(router.send(chat_id, "hi"))
+    bot = next(t for t in router.list_turns(chat_id) if t["role"] == "bot")
+    assert bot["text"] == "Hej"
+
+
 def test_copilot_followup_uses_session() -> None:
     engine = FakeEngine(
         "copilot",
