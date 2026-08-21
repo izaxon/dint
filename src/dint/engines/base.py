@@ -35,6 +35,9 @@ class CliEngine:
                     if event.type == "done":
                         done = True
                     yield event
+            code = self._running.proc.returncode
+            if code not in (0, None) and not done:
+                yield Event(type="error", text=f"{self.name} exited {code}", session_id=sid)
             if not done:
                 yield Event(type="done", session_id=sid)
         except CancelledError:

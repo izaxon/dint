@@ -18,21 +18,28 @@ class CodexEngine(CliEngine):
         super().__init__(binary or os.environ.get("DINT_CODEX_BIN") or shutil.which("codex") or "codex")
 
     def argv(self, prompt: str, cwd: str, session_id: str | None) -> list[str]:
-        cmd = [self.binary, "exec"]
+        # `codex exec resume` does not accept -C / -s; cwd is the subprocess cwd.
         if session_id:
-            cmd.extend(["resume", session_id])
-        cmd.extend(
-            [
+            return [
+                self.binary,
+                "exec",
+                "resume",
+                session_id,
                 "--json",
                 "--skip-git-repo-check",
-                "-C",
-                cwd,
-                "-s",
-                os.environ.get("DINT_CODEX_SANDBOX", "workspace-write"),
+                prompt,
             ]
-        )
-        cmd.append(prompt)
-        return cmd
+        return [
+            self.binary,
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "-C",
+            cwd,
+            "-s",
+            os.environ.get("DINT_CODEX_SANDBOX", "workspace-write"),
+            prompt,
+        ]
 
     def parse_line(self, line: str, session_id: str | None) -> list[Event]:
         return parse_codex_line(line, session_id=session_id)

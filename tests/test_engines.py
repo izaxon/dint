@@ -18,7 +18,10 @@ def test_cli_argv_resume() -> None:
     assert claude.argv("hi", ".", "ses-1")[-3:-1] == ["--resume", "ses-1"]
     codex = CodexEngine(binary="codex")
     assert "resume" not in codex.argv("hi", r"C:\proj", None)
-    assert codex.argv("hi", r"C:\proj", "thr_1")[:4] == ["codex", "exec", "resume", "thr_1"]
+    assert "-C" in codex.argv("hi", r"C:\proj", None)
+    resumed_codex = codex.argv("hi", r"C:\proj", "thr_1")
+    assert resumed_codex[:4] == ["codex", "exec", "resume", "thr_1"]
+    assert "-C" not in resumed_codex and "-s" not in resumed_codex
     grok = GrokEngine(binary="grok")
     g = grok.argv("hi", r"C:\proj", None)
     assert g[:1] == ["grok"] and "-p" in g and "streaming-json" in g
