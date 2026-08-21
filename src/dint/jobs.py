@@ -17,6 +17,7 @@ from dint.router import ENGINES, Router
 
 JOB_TAG = "job"
 ACK_TAG = "job-run"
+_job_lock = threading.Lock()
 
 
 def post_job(router: Router, engine: str, prompt: str, cwd: str = ".") -> str:
@@ -94,6 +95,19 @@ def handle_event(payload: dict[str, Any], router: Router) -> str | None:
     job = parse_job(content, tags)
     if job is None:
         return None
+    if message_id:
+        with _job_lock:
+            existing = _chat_id_for_job(router, message_id)
+            if existing:
+                print(f"job {message_id} already chat {existing}", flush=True)
+                return existing
+            started = getattr(router, "_started_jobs", None)
+            if started is None:
+                started = set()
+                router._started_jobs = started
+            if message_id in started:
+                return None
+            started.add(message_id)
     chat_id = router.start_chat(job["engine"], job["cwd"])
     _ack(router, message_id, chat_id, job)
     print(f"job {message_id} -> chat {chat_id}", flush=True)
@@ -143,7 +157,13 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
             except json.JSONDecodeError:
                 self.send_error(400, "invalid json")
                 return
-            event_id = str(payload.get("eventId") or payload.get("data", {}).get("messageId") or "")
+            data = payload.get("data") or payload.get("Data") or {}
+            event_id = str(
+                payload.get("eventId")
+                or payload.get("EventId")
+                or (data.get("messageId") if isinstance(data, dict) else "")
+                or ""
+            )
             if event_id and event_id in seen:
                 self._ok({"ok": True, "duplicate": True})
                 return

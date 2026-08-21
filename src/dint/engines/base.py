@@ -24,18 +24,19 @@ class CliEngine:
         raise NotImplementedError
 
     def send(self, prompt: str, *, cwd: str, session_id: str | None) -> Iterator[Event]:
-        self._running = spawn(self.argv(prompt, cwd, session_id), cwd=cwd)
+        running = spawn(self.argv(prompt, cwd, session_id), cwd=cwd)
+        self._running = running
         sid = session_id
         done = False
         try:
-            for line in self._running.lines():
+            for line in running.lines():
                 for event in self.parse_line(line, sid):
                     if event.session_id:
                         sid = event.session_id
                     if event.type == "done":
                         done = True
                     yield event
-            code = self._running.proc.returncode
+            code = running.proc.returncode
             if code not in (0, None) and not done:
                 yield Event(type="error", text=f"{self.name} exited {code}", session_id=sid)
             if not done:
@@ -43,7 +44,8 @@ class CliEngine:
         except CancelledError:
             yield Event(type="error", text="cancelled", session_id=sid)
         finally:
-            self._running = None
+            if self._running is running:
+                self._running = None
 
     def cancel(self) -> None:
         if self._running is not None:

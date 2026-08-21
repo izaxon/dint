@@ -36,7 +36,7 @@ class Router:
         if chat_id in self._active:
             raise RuntimeError(f"chat {chat_id} already has a running turn")
         chat = self._load(chat_id)
-        engine = self.engines[chat.engine]
+        engine = self._engine_for(chat.engine)
         self.store.post(chat, "user", prompt)
         self._active[chat_id] = engine
         assistant: list[str] = []
@@ -80,6 +80,17 @@ class Router:
 
     def list_chats(self) -> list[dict]:
         return self.store.list_chats()
+
+    def _engine_for(self, name: str) -> Engine:
+        proto = self.engines[name]
+        cls = type(proto)
+        binary = getattr(proto, "binary", None)
+        if binary is not None:
+            try:
+                return cls(binary=binary)
+            except TypeError:
+                pass
+        return proto
 
     def _load(self, chat_id: str) -> Chat:
         chat = self.store.get_chat(chat_id) or self._chats.get(chat_id)
