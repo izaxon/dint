@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("chat_id")
 
     sub.add_parser("chats", help="list conversations in Logbook")
-    sub.add_parser("doctor", help="check Logbook and engine CLIs")
+    sub.add_parser("status", help="check Logbook and engine CLIs")
 
     s = sub.add_parser("job", help="enqueue a #job in Logbook (dint serve runs it)")
     s.add_argument("engine", choices=["claude", "codex", "grok", "copilot"])
@@ -51,10 +51,10 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
 
-    if args.cmd == "doctor":
-        from dint.doctor import run_doctor
+    if args.cmd == "status":
+        from dint.status import run_status
 
-        return run_doctor()
+        return run_status()
 
     router = Router()
     try:

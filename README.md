@@ -29,7 +29,7 @@ logbook-server
 cd C:\Users\JohanIsaksson\src\dint
 .\.venv\Scripts\Activate.ps1
 pip install -e .
-dint doctor
+dint status
 dint start grok .
 dint send <chat_id> "Summarize this repo"
 dint chats
@@ -37,7 +37,7 @@ dint list <chat_id>
 dint show <chat_id>
 ```
 
-`dint doctor` checks Logbook health/auth and whether the four CLIs are on PATH.
+`dint status` checks Logbook health/auth and whether the four CLIs are on PATH.
 
 ## Jobs
 

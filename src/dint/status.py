@@ -8,7 +8,7 @@ from dint.logbook.rest import RestLogbook
 from dint.router import ENGINES
 
 
-def run_doctor() -> int:
+def run_status() -> int:
     url = os.environ.get("LOGBOOK_URL", "http://127.0.0.1:5100")
     project = os.environ.get("LOGBOOK_PROJECT", "dint")
     key = os.environ.get("LOGBOOK_API_KEY", "")
