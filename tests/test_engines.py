@@ -8,6 +8,7 @@ from dint.engines import (
     parse_claude_line,
     parse_codex_line,
     parse_copilot_line,
+    parse_grok_line,
 )
 
 
@@ -74,3 +75,15 @@ def test_copilot_session_and_tools() -> None:
     assert any(e.type == "text" and "hello" in e.text for e in events)
     assert any(e.type == "tool" for e in events)
     assert events[-1].type == "done" and events[-1].session_id == "cp-1"
+
+
+def test_grok_native_streaming_json() -> None:
+    events = parse_grok_line('{"type":"thought","data":"hmm"}')
+    events += parse_grok_line('{"type":"text","data":"Hej"}')
+    events += parse_grok_line('{"type":"text","data":"!"}')
+    events += parse_grok_line('{"type":"tool_call","toolName":"read_file","title":"Read"}')
+    events += parse_grok_line('{"type":"end","sessionId":"abc123","stopReason":"end_turn"}')
+    assert not any(e.type == "text" and e.text == "hmm" for e in events)
+    assert [e.text for e in events if e.type == "text"] == ["Hej", "!"]
+    assert any(e.type == "tool" and e.tool == "read_file" for e in events)
+    assert events[-1].type == "done" and events[-1].session_id == "abc123"

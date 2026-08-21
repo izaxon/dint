@@ -2,7 +2,7 @@ from dint.engines.base import CliEngine, StubEngine
 from dint.engines.claude import ClaudeEngine, parse_claude_line
 from dint.engines.codex import CodexEngine, parse_codex_line
 from dint.engines.copilot import CopilotEngine, parse_copilot_line
-from dint.engines.grok import GrokEngine
+from dint.engines.grok import GrokEngine, parse_grok_line
 from dint.types import Engine
 
 
@@ -26,4 +26,5 @@ __all__ = [
     "parse_claude_line",
     "parse_codex_line",
     "parse_copilot_line",
+    "parse_grok_line",
 ]
