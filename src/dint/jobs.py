@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -33,6 +34,27 @@ def post_job(router: Router, engine: str, prompt: str, cwd: str = ".") -> str:
     content = format_content(router.store.project, [JOB_TAG, engine], job)
     result = router.store.logbook.post_message(content)
     return str(result.get("id") or result.get("Id") or "")
+
+
+def wait_for_job_chat(router: Router, job_id: str, *, timeout: float = 20) -> str | None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        chat_id = _chat_id_for_job(router, job_id)
+        if chat_id:
+            return chat_id
+        time.sleep(0.4)
+    return None
+
+
+def _chat_id_for_job(router: Router, job_id: str) -> str | None:
+    for item in router.store.logbook.get_messages(f"#{ACK_TAG}", length=50):
+        parent = str(item.get("parentId") or item.get("ParentId") or "")
+        rec = extract_json(str(item.get("content") or item.get("Content") or "")) or {}
+        if rec.get("jobId") == job_id or parent == job_id:
+            chat_id = rec.get("chatId")
+            if chat_id:
+                return str(chat_id)
+    return None
 
 
 def parse_job(content: str, tags: list[str] | None = None) -> dict[str, str] | None:

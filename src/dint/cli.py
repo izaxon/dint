@@ -97,12 +97,18 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 0
         if args.cmd == "job":
-            from dint.jobs import post_job
+            from dint.jobs import post_job, wait_for_job_chat
 
             cwd, prompt = _job_cwd_prompt(args.args)
             job_id = post_job(router, args.engine, prompt, cwd)
-            print(job_id)
-            return 0
+            print(f"job\t{job_id}")
+            chat_id = wait_for_job_chat(router, job_id)
+            if chat_id:
+                print(f"chat\t{chat_id}")
+                print(f"dint list {chat_id}")
+            else:
+                print("waiting for dint serve... try: dint chats", file=sys.stderr)
+            return 0 if chat_id else 2
         if args.cmd == "serve":
             from dint.jobs import serve
 

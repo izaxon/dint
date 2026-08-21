@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 
-from dint.jobs import handle_event, parse_job, post_job
+from dint.jobs import handle_event, parse_job, post_job, wait_for_job_chat
 from dint.logbook import ChatLog
 from dint.router import Router
 from dint.types import Event
@@ -77,3 +77,30 @@ def test_handle_event_starts_chat(monkeypatch) -> None:
     assert engine.calls[0]["prompt"] == "hi"
     assert any("#job-run" in m["content"] for m in ledger.posted)
     assert any(t["role"] == "bot" and t["text"] == "ok" for t in router.list_turns(chat_id))
+
+
+def test_wait_for_job_chat_reads_ack(monkeypatch) -> None:
+    class Immediate(threading.Thread):
+        def start(self) -> None:
+            self.run()
+
+    monkeypatch.setattr(threading, "Thread", Immediate)
+    engine = FakeEngine(
+        "codex",
+        [[Event(type="text", text="pong"), Event(type="done")]],
+    )
+    ledger = MemoryLogbook()
+    router = Router(
+        store=ChatLog(ledger, project="test"),
+        engines={"codex": engine, "claude": FakeEngine("claude", [])},
+    )
+    job_id = post_job(router, "codex", "hi")
+    content = ledger.posted[0]["content"]
+    handle_event(
+        {
+            "eventType": "message.created",
+            "data": {"messageId": job_id, "tags": ["job", "codex"], "content": content},
+        },
+        router,
+    )
+    assert wait_for_job_chat(router, job_id, timeout=1) is not None

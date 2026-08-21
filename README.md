@@ -46,7 +46,10 @@ Enqueue a job from the CLI (Logbook `#job`; `dint serve` runs it):
 ```powershell
 dint serve                          # keep this running
 dint job grok "hej vad kan du göra?"
-dint job claude C:\src\myproj "Summarize this repo"
+# job    <logbook-id>
+# chat   <chat_id>
+dint list <chat_id>
+dint chats
 ```
 
 A `#job` message also works from Logbook itself:
