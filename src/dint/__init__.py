@@ -1,4 +1,4 @@
-"""dint — one local chat API over Claude Code and Codex."""
+"""dint — one local chat API over Claude, Codex, Grok, and Copilot."""
 
 from dint.router import Router
 from dint.types import Chat, Event

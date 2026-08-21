@@ -3,8 +3,25 @@ name = "dint"
 version = "0.1.0"
 description = "One local chat API over Claude, Codex, Grok, and Copilot. Codicent Logbook is the ledger."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+authors = [{ name = "Johan Isaksson", email = "johan@izaxon.com" }]
+keywords = ["claude", "codex", "grok", "copilot", "logbook", "codicent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://izaxon.github.io/dint/"
+Repository = "https://github.com/izaxon/dint"
+Issues = "https://github.com/izaxon/dint/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
