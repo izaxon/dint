@@ -106,6 +106,32 @@ def test_wait_for_job_chat_reads_ack(monkeypatch) -> None:
     assert wait_for_job_chat(router, job_id, timeout=1) is not None
 
 
+def test_handle_event_skips_non_job_without_fetch(monkeypatch) -> None:
+    called: list[str] = []
+
+    def boom(*_a, **_k):
+        called.append("fetch")
+        raise AssertionError("should not fetch non-job webhooks")
+
+    monkeypatch.setattr("dint.jobs._fetch_message", boom)
+    ledger = MemoryLogbook()
+    router = Router(
+        store=ChatLog(ledger, project="test"),
+        engines={"codex": FakeEngine("codex", [])},
+    )
+    assert (
+        handle_event(
+            {
+                "EventType": "message.created",
+                "Data": {"messageId": "bot-1", "tags": ["#chat", "#codex", "#bot"]},
+            },
+            router,
+        )
+        is None
+    )
+    assert called == []
+
+
 def test_handle_event_logbook_pascal_case(monkeypatch) -> None:
     class Immediate(threading.Thread):
         def start(self) -> None:

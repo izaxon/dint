@@ -85,13 +85,15 @@ def handle_event(payload: dict[str, Any], router: Router) -> str | None:
     if not isinstance(data, dict):
         data = payload
     message_id = str(_pick(data, "messageId", "id") or "")
-    tags = list(_pick(data, "tags") or [])
+    tags = _as_tags(_pick(data, "tags"))
+    if tags and JOB_TAG not in {_norm_tag(t) for t in tags}:
+        return None
     content = str(_pick(data, "content") or "")
     if not content and message_id:
         row = _fetch_message(router, message_id)
         if row:
             content = str(row.get("content") or row.get("Content") or "")
-            tags = list(row.get("tags") or row.get("Tags") or tags)
+            tags = _as_tags(row.get("tags") or row.get("Tags") or tags)
     job = parse_job(content, tags)
     if job is None:
         return None
@@ -193,9 +195,16 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
 def _run_send(router: Router, chat_id: str, prompt: str) -> None:
     try:
         print(f"job chat {chat_id} starting", flush=True)
-        for _ in router.send(chat_id, prompt):
-            pass
-        print(f"job chat {chat_id} done", flush=True)
+        n_text = 0
+        for event in router.send(chat_id, prompt):
+            if event.type == "text" and event.text:
+                n_text += 1
+        bot = next((t for t in reversed(router.list_turns(chat_id)) if t.get("role") == "bot"), None)
+        if bot and bot.get("text"):
+            preview = str(bot["text"]).replace("\n", " ")[:80]
+            print(f"job chat {chat_id} done {preview}", flush=True)
+        else:
+            print(f"job chat {chat_id} done (no bot text, chunks={n_text})", flush=True)
     except Exception as e:
         print(f"job chat {chat_id} failed: {e}", file=sys.stderr, flush=True)
 
@@ -268,6 +277,14 @@ def _pick(obj: dict[str, Any], *names: str) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _as_tags(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    return [str(t) for t in value]
 
 
 def _norm_tag(tag: str) -> str:

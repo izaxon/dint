@@ -18,6 +18,7 @@ from dint.logbook.mcp import McpLogbook
 from dint.logbook.rest import LogbookError, RestLogbook
 from dint.types import Chat, Logbook, Role
 
+CHAT_ROLES = {"header", "session", "user", "bot", "tool", "error"}
 TURN_ROLES = {"user", "bot", "tool", "error"}
 
 
@@ -85,17 +86,24 @@ class ChatLog:
         )
 
     def list_messages(self, chat_id: str) -> list[dict[str, Any]]:
-        tagged = [_record(item) for item in self.logbook.get_messages(f"#chat-{chat_id}")]
-        tagged = [r for r in tagged if r and r.get("chatId") == chat_id]
+        # GetMessageHistory can truncate content; #chat-<id> search keeps the full body.
+        tagged = [
+            r
+            for r in (_record(item) for item in self.logbook.get_messages(f"#chat-{chat_id}"))
+            if r and r.get("chatId") == chat_id and r.get("role") in CHAT_ROLES
+        ]
+        by_id: dict[str, dict[str, Any]] = {}
         header_id = next((r.get("id") for r in tagged if r.get("role") == "header" and r.get("id")), None)
         if header_id:
-            hist = [_record(item) for item in self.logbook.get_history(header_id)]
-            hist = [r for r in hist if r]
-            if hist:
-                hist.sort(key=lambda r: r.get("ts") or "")
-                return hist
-        tagged.sort(key=lambda r: r.get("ts") or "")
-        return tagged
+            for rec in (_record(item) for item in self.logbook.get_history(header_id)):
+                if rec and rec.get("id") and rec.get("role") in CHAT_ROLES:
+                    by_id[str(rec["id"])] = rec
+        for rec in tagged:
+            rid = rec.get("id")
+            by_id[str(rid) if rid else f"anon-{len(by_id)}"] = rec
+        rows = list(by_id.values())
+        rows.sort(key=lambda r: (str(r.get("ts") or ""), str(r.get("id") or "")))
+        return rows
 
     def list_turns(self, chat_id: str) -> list[dict[str, Any]]:
         return [r for r in self.list_messages(chat_id) if r.get("role") in TURN_ROLES]

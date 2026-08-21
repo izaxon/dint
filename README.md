@@ -88,4 +88,4 @@ for ev in r.send(chat_id, "Summarize this repo"):
 | `DINT_JOBS_PORT` | `8787` |
 | `LOGBOOK_WEBHOOK_SECRET` | _(optional HMAC)_ |
 
-Each chat is a Codicent-style thread: the header is the root; every later message sets `parentId` to the previous one. User turns are tagged `#user`, engine replies `#bot`. Load a conversation with Logbook `GetMessageHistory` (header id) or `GET /api/messages?search=#chat-<id>`.
+Each chat is a Codicent-style thread: the header is the root; every later message sets `parentId` to the previous one. User turns are tagged `#user`, engine replies `#bot`. `dint list` reads `#chat-<id>` (full body) and merges `GetMessageHistory` for the parent chain — history alone can truncate long bot JSON.

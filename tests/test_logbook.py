@@ -98,6 +98,42 @@ def test_parent_id_chains_user_and_bot() -> None:
     assert turns[0]["text"] == "hi"
 
 
+def test_list_messages_keeps_bot_when_history_truncates() -> None:
+    class Truncating(MemoryLogbook):
+        def get_history(self, message_id: str) -> list[dict]:
+            rows = super().get_history(message_id)
+            out = []
+            for m in rows:
+                content = m["content"]
+                if len(content) > 280:
+                    out.append({**m, "content": content[:280] + "..."})
+                else:
+                    out.append(m)
+            return out
+
+    ledger = Truncating()
+    store = ChatLog(ledger, project="dint")
+    chat = Chat(chat_id="67c78a6be9e3", engine="codex", cwd=r"C:\proj")
+    store.post(chat, "header")
+    store.post(chat, "user", "vad kan du göra?")
+    chat.external_session_id = "ses-1"
+    store.post(chat, "session")
+    answer = (
+        "Jag kan fungera som din tekniska partner och faktiskt utföra arbete, inte bara ge råd. "
+        + ("x" * 400)
+    )
+    store.post(chat, "bot", answer)
+    ledger.post_message(
+        '@dint #job-run #codex #chat-67c78a6be9e3 {"chatId":"67c78a6be9e3","jobId":"job-1"}'
+    )
+
+    hist = store.list_messages("67c78a6be9e3")
+    assert [r["role"] for r in hist] == ["header", "user", "session", "bot"]
+    bot = hist[-1]
+    assert bot["text"] == answer
+    assert bot["text"].startswith("Jag kan fungera")
+
+
 def test_list_chats_groups_headers() -> None:
     ledger = MemoryLogbook()
     store = ChatLog(ledger, project="dint")
