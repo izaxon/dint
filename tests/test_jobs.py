@@ -23,6 +23,17 @@ def test_post_job_writes_logbook() -> None:
     assert job["prompt"] == "hej vad kan du göra?"
 
 
+def test_parse_job_matches_skill_example() -> None:
+    content = (
+        '@test #job #grok {"engine":"grok","cwd":"C:\\\\Users\\\\JohanIsaksson\\\\src\\\\dint",'
+        '"prompt":"Reply with only: pong"}'
+    )
+    job = parse_job(content, ["#job", "#grok"])
+    assert job is not None
+    assert job["engine"] == "grok"
+    assert job["prompt"] == "Reply with only: pong"
+
+
 def test_parse_job_from_tags_and_json() -> None:
     job = parse_job(
         '@test #job #grok {"engine":"grok","cwd":"C:\\\\proj","prompt":"hello"}',

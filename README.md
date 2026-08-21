@@ -79,6 +79,8 @@ or `@test #job #grok Summarize this repo`.
 
 `dint serve` listens on `http://127.0.0.1:8787/webhook`. If register fails, start logbook-server with `LOGBOOK_WEBHOOK_URL=http://127.0.0.1:8787/webhook`. Completed turns are stored on `#chat-<id>` like a normal `send`. Ack is `#job-run` (not `#job`, so it does not loop).
 
+Agents should use Logbook MCP (`post_message` / `get_messages`) rather than a dint MCP. The contract is in [`.grok/skills/dint-jobs/SKILL.md`](.grok/skills/dint-jobs/SKILL.md).
+
 ## Ledger
 
 Each chat is a Codicent-style thread: the header is the root; every later message sets `parentId` to the previous one. User turns are tagged `#user`, engine replies `#bot`. `dint list` reads `#chat-<id>` (full body) and merges `GetMessageHistory` for the parent chain — history alone can truncate long bot JSON.
