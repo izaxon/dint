@@ -41,7 +41,15 @@ dint show <chat_id>
 
 ## Jobs
 
-`dint serve` listens for Logbook `message.created` webhooks. A `#job` message starts a chat in the background:
+Enqueue a job from the CLI (Logbook `#job`; `dint serve` runs it):
+
+```powershell
+dint serve                          # keep this running
+dint job grok "hej vad kan du göra?"
+dint job claude C:\src\myproj "Summarize this repo"
+```
+
+A `#job` message also works from Logbook itself:
 
 ```
 @test #job #claude

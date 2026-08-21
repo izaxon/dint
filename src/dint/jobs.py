@@ -18,6 +18,23 @@ JOB_TAG = "job"
 ACK_TAG = "job-run"
 
 
+def post_job(router: Router, engine: str, prompt: str, cwd: str = ".") -> str:
+    engine = engine.strip().lower()
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine: {engine}")
+    prompt = prompt.strip()
+    if not prompt:
+        raise ValueError("prompt is required")
+    job = {
+        "engine": engine,
+        "cwd": os.path.abspath(cwd),
+        "prompt": prompt,
+    }
+    content = format_content(router.store.project, [JOB_TAG, engine], job)
+    result = router.store.logbook.post_message(content)
+    return str(result.get("id") or result.get("Id") or "")
+
+
 def parse_job(content: str, tags: list[str] | None = None) -> dict[str, str] | None:
     names = {_norm_tag(t) for t in (tags or [])}
     if not names:

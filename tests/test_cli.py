@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dint.cli import EventPrinter, main
+import os
+
+from dint.cli import EventPrinter, _job_cwd_prompt, main
 from dint.logbook import ChatLog
 from dint.router import Router
 from dint.types import Event
@@ -32,6 +34,14 @@ def test_cli_start_and_list(monkeypatch, capsys) -> None:
     assert main(["chats"]) == 0
     chats_out = capsys.readouterr().out
     assert chat_id in chats_out
+
+
+def test_job_cwd_prompt(tmp_path) -> None:
+    cwd, prompt = _job_cwd_prompt(["hello", "world"])
+    assert prompt == "hello world"
+    cwd, prompt = _job_cwd_prompt([str(tmp_path), "do", "work"])
+    assert cwd == os.path.abspath(str(tmp_path))
+    assert prompt == "do work"
 
 
 def test_cli_streams_tokens_inline(capsys) -> None:

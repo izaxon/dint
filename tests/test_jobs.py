@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import threading
 
-from dint.jobs import handle_event, parse_job
+from dint.jobs import handle_event, parse_job, post_job
 from dint.logbook import ChatLog
 from dint.router import Router
 from dint.types import Event
 from test_logbook import MemoryLogbook
 from test_router import FakeEngine
+
+
+def test_post_job_writes_logbook() -> None:
+    ledger = MemoryLogbook()
+    router = Router(store=ChatLog(ledger, project="test"), engines={"grok": FakeEngine("grok", [])})
+    job_id = post_job(router, "grok", "hej vad kan du göra?", cwd=".")
+    assert job_id
+    content = ledger.posted[0]["content"]
+    assert "#job" in content and "#grok" in content
+    job = parse_job(content, ["job", "grok"])
+    assert job is not None
+    assert job["engine"] == "grok"
+    assert job["prompt"] == "hej vad kan du göra?"
 
 
 def test_parse_job_from_tags_and_json() -> None:

@@ -40,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("chats", help="list conversations in Logbook")
     sub.add_parser("doctor", help="check Logbook and engine CLIs")
 
+    s = sub.add_parser("job", help="enqueue a #job in Logbook (dint serve runs it)")
+    s.add_argument("engine", choices=["claude", "codex", "grok", "copilot"])
+    s.add_argument("args", nargs="+", help="optional cwd, then prompt")
+
     s = sub.add_parser("serve", help="run #job webhooks from Logbook")
     s.add_argument("--host", default=os.environ.get("DINT_JOBS_HOST", "127.0.0.1"))
     s.add_argument("--port", type=int, default=int(os.environ.get("DINT_JOBS_PORT", "8787")))
@@ -92,6 +96,13 @@ def main(argv: list[str] | None = None) -> int:
                     f"{c.get('ts')}\t{c.get('chatId')}\t{c.get('engine')}\t{preview}"
                 )
             return 0
+        if args.cmd == "job":
+            from dint.jobs import post_job
+
+            cwd, prompt = _job_cwd_prompt(args.args)
+            job_id = post_job(router, args.engine, prompt, cwd)
+            print(job_id)
+            return 0
         if args.cmd == "serve":
             from dint.jobs import serve
 
@@ -101,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 1
     return 1
+
+
+def _job_cwd_prompt(args: list[str]) -> tuple[str, str]:
+    if len(args) >= 2 and os.path.isdir(args[0]):
+        return os.path.abspath(args[0]), " ".join(args[1:])
+    return os.path.abspath("."), " ".join(args)
 
 
 class EventPrinter:
