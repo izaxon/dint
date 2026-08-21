@@ -104,3 +104,31 @@ def test_wait_for_job_chat_reads_ack(monkeypatch) -> None:
         router,
     )
     assert wait_for_job_chat(router, job_id, timeout=1) is not None
+
+
+def test_handle_event_logbook_pascal_case(monkeypatch) -> None:
+    class Immediate(threading.Thread):
+        def start(self) -> None:
+            self.run()
+
+    monkeypatch.setattr(threading, "Thread", Immediate)
+    engine = FakeEngine(
+        "codex",
+        [[Event(type="text", text="pong"), Event(type="done")]],
+    )
+    ledger = MemoryLogbook()
+    router = Router(
+        store=ChatLog(ledger, project="test"),
+        engines={"codex": engine, "claude": FakeEngine("claude", [])},
+    )
+    job_id = post_job(router, "codex", "vad kan du göra?")
+    chat_id = handle_event(
+        {
+            "EventType": "message.created",
+            "EventId": "e-pascal",
+            "Data": {"messageId": job_id, "tags": ["#job", "#codex"]},
+        },
+        router,
+    )
+    assert chat_id
+    assert engine.calls[0]["prompt"] == "vad kan du göra?"

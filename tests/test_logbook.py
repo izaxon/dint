@@ -15,6 +15,12 @@ class MemoryLogbook:
         self.posted.append({"id": msg_id, "content": message, "parentId": parent_id})
         return {"id": msg_id}
 
+    def get_message(self, message_id: str) -> dict | None:
+        for m in self.posted:
+            if m["id"] == message_id:
+                return m
+        return None
+
     def get_messages(self, search: str | None = None, *, start: int = 0, length: int = 100) -> list[dict]:
         items = list(self.posted)
         if search:

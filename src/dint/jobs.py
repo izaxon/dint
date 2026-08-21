@@ -77,25 +77,26 @@ def parse_job(content: str, tags: list[str] | None = None) -> dict[str, str] | N
 
 
 def handle_event(payload: dict[str, Any], router: Router) -> str | None:
-    if payload.get("eventType") not in {None, "message.created"}:
+    event_type = _pick(payload, "eventType")
+    if event_type and str(event_type) not in {"message.created"}:
         return None
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    tags = data.get("tags") or []
-    names = {_norm_tag(t) for t in tags}
-    if JOB_TAG not in names or ACK_TAG in names:
-        return None
-    message_id = str(data.get("messageId") or data.get("id") or "")
-    content = str(data.get("content") or data.get("Content") or "")
+    data = _pick(payload, "data")
+    if not isinstance(data, dict):
+        data = payload
+    message_id = str(_pick(data, "messageId", "id") or "")
+    tags = list(_pick(data, "tags") or [])
+    content = str(_pick(data, "content") or "")
     if not content and message_id:
         row = _fetch_message(router, message_id)
         if row:
             content = str(row.get("content") or row.get("Content") or "")
-            tags = row.get("tags") or tags
+            tags = list(row.get("tags") or row.get("Tags") or tags)
     job = parse_job(content, tags)
     if job is None:
         return None
     chat_id = router.start_chat(job["engine"], job["cwd"])
     _ack(router, message_id, chat_id, job)
+    print(f"job {message_id} -> chat {chat_id}", flush=True)
     threading.Thread(
         target=_run_send,
         args=(router, chat_id, job["prompt"]),
@@ -125,7 +126,7 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
-            return
+            sys.stderr.write("%s\n" % (fmt % args))
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
@@ -238,6 +239,15 @@ def _signature_ok(body: str, headers: dict[str, str]) -> bool:
         return False
     expected = "sha256=" + hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, got)
+
+
+def _pick(obj: dict[str, Any], *names: str) -> Any:
+    lower = {str(k).lower(): v for k, v in obj.items()}
+    for name in names:
+        value = lower.get(name.lower())
+        if value is not None:
+            return value
+    return None
 
 
 def _norm_tag(tag: str) -> str:
