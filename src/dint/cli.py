@@ -5,10 +5,15 @@ import json
 import os
 import sys
 
+from dint.envfile import load_dotenv
 from dint.router import Router
 
 
 def main(argv: list[str] | None = None) -> int:
+    env_path = load_dotenv()
+    if env_path:
+        os.environ.setdefault("DINT_ENV_FILE", str(env_path))
+
     p = argparse.ArgumentParser(
         prog="dint",
         description="Chat router over Claude Code, Codex, Grok, and Copilot. Logbook is the ledger.",
@@ -32,9 +37,22 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("show")
     s.add_argument("chat_id")
 
-    args = p.parse_args(argv)
-    router = Router()
+    sub.add_parser("chats", help="list conversations in Logbook")
+    sub.add_parser("doctor", help="check Logbook and engine CLIs")
 
+    s = sub.add_parser("serve", help="run #job webhooks from Logbook")
+    s.add_argument("--host", default=os.environ.get("DINT_JOBS_HOST", "127.0.0.1"))
+    s.add_argument("--port", type=int, default=int(os.environ.get("DINT_JOBS_PORT", "8787")))
+    s.add_argument("--no-register", action="store_true", help="do not call Logbook register_webhook")
+
+    args = p.parse_args(argv)
+
+    if args.cmd == "doctor":
+        from dint.doctor import run_doctor
+
+        return run_doctor()
+
+    router = Router()
     try:
         if args.cmd == "start":
             print(router.start_chat(args.engine, os.path.abspath(args.cwd)))
@@ -66,6 +84,18 @@ def main(argv: list[str] | None = None) -> int:
                 "cwd": chat.cwd,
                 "externalSessionId": chat.external_session_id,
             }, indent=2))
+            return 0
+        if args.cmd == "chats":
+            for c in router.list_chats():
+                preview = (c.get("preview") or "").replace("\n", " ")[:60]
+                print(
+                    f"{c.get('ts')}\t{c.get('chatId')}\t{c.get('engine')}\t{preview}"
+                )
+            return 0
+        if args.cmd == "serve":
+            from dint.jobs import serve
+
+            serve(args.host, args.port, register=not args.no_register)
             return 0
     except (KeyError, NotImplementedError, RuntimeError, ValueError) as e:
         print(str(e), file=sys.stderr)

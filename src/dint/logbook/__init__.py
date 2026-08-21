@@ -18,17 +18,17 @@ from dint.logbook.mcp import McpLogbook
 from dint.logbook.rest import LogbookError, RestLogbook
 from dint.types import Chat, Logbook, Role
 
-DEFAULT_URL = os.environ.get("LOGBOOK_URL", "http://127.0.0.1:5100")
-DEFAULT_KEY = os.environ.get("LOGBOOK_API_KEY", "test-local-key")
-DEFAULT_PROJECT = os.environ.get("LOGBOOK_PROJECT", "dint")
-DEFAULT_TRANSPORT = os.environ.get("LOGBOOK_TRANSPORT", "rest")
-
 TURN_ROLES = {"user", "bot", "tool", "error"}
 
 
+def _env(name: str, default: str) -> str:
+    return os.environ.get(name, default)
+
+
 def default_logbook() -> Logbook:
-    url, key = DEFAULT_URL, DEFAULT_KEY
-    if DEFAULT_TRANSPORT == "mcp":
+    url = _env("LOGBOOK_URL", "http://127.0.0.1:5100")
+    key = _env("LOGBOOK_API_KEY", "test-local-key")
+    if _env("LOGBOOK_TRANSPORT", "rest") == "mcp":
         return McpLogbook(url, key)
     return RestLogbook(url, key)
 
@@ -38,7 +38,7 @@ class ChatLog:
 
     def __init__(self, logbook: Logbook | None = None, *, project: str | None = None) -> None:
         self.logbook = logbook or default_logbook()
-        self.project = project or DEFAULT_PROJECT
+        self.project = project or _env("LOGBOOK_PROJECT", "dint")
 
     def post(self, chat: Chat, role: Role, text: str = "") -> str:
         tags = ["chat", chat.engine, f"chat-{chat.chat_id}"]
@@ -99,6 +99,41 @@ class ChatLog:
 
     def list_turns(self, chat_id: str) -> list[dict[str, Any]]:
         return [r for r in self.list_messages(chat_id) if r.get("role") in TURN_ROLES]
+
+    def list_chats(self, *, length: int = 100) -> list[dict[str, Any]]:
+        rows = [_record(item) for item in self.logbook.get_messages("#chat", length=length)]
+        chats: dict[str, dict[str, Any]] = {}
+        for rec in rows:
+            if not rec or not rec.get("chatId"):
+                continue
+            cid = str(rec["chatId"])
+            cur = chats.setdefault(
+                cid,
+                {
+                    "chatId": cid,
+                    "engine": rec.get("engine") or "",
+                    "cwd": rec.get("cwd") or "",
+                    "externalSessionId": None,
+                    "ts": "",
+                    "preview": "",
+                    "headerId": None,
+                },
+            )
+            if rec.get("engine"):
+                cur["engine"] = rec["engine"]
+            if rec.get("cwd"):
+                cur["cwd"] = rec["cwd"]
+            if rec.get("externalSessionId"):
+                cur["externalSessionId"] = rec["externalSessionId"]
+            if rec.get("role") == "header":
+                cur["headerId"] = rec.get("id")
+            ts = rec.get("ts") or ""
+            if ts >= (cur.get("ts") or ""):
+                cur["ts"] = ts
+                preview = rec.get("text") or rec.get("role") or ""
+                if preview:
+                    cur["preview"] = preview
+        return sorted(chats.values(), key=lambda c: c.get("ts") or "", reverse=True)
 
 
 def _record(item: dict[str, Any]) -> dict[str, Any] | None:

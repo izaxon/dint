@@ -78,6 +78,9 @@ class Router:
     def get_chat(self, chat_id: str) -> Chat:
         return self._load(chat_id)
 
+    def list_chats(self) -> list[dict]:
+        return self.store.list_chats()
+
     def _load(self, chat_id: str) -> Chat:
         chat = self.store.get_chat(chat_id) or self._chats.get(chat_id)
         if chat is None:

@@ -44,6 +44,18 @@ class RestLogbook:
             return list(data.get("messages") or data.get("items") or [])
         return []
 
+    def health(self) -> dict:
+        data = self._request("GET", "/health", auth=False)
+        return data if isinstance(data, dict) else {"raw": data}
+
+    def get_message(self, message_id: str) -> dict | None:
+        rows = self.get_messages(message_id, length=20)
+        for row in rows:
+            rid = str(row.get("id") or row.get("Id") or "")
+            if rid == message_id:
+                return row
+        return rows[0] if rows else None
+
     def get_history(self, message_id: str) -> list[dict]:
         data = self._request("GET", f"/api/messages/{urllib.parse.quote(message_id)}/history")
         if isinstance(data, list):
@@ -52,12 +64,12 @@ class RestLogbook:
             return list(data.get("messages") or data.get("items") or [])
         return []
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> Any:
+    def _request(self, method: str, path: str, body: dict | None = None, *, auth: bool = True) -> Any:
         raw_body = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"
-        if self.api_key:
+        if auth and self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(self.url + path, data=raw_body, headers=headers, method=method)
         try:

@@ -13,34 +13,49 @@ Router.start_chat / send / cancel
 
 ## Run
 
-1. Start [logbook-server](https://logbook.codicent.ai) (MCP/REST on port 5100):
+1. Start [logbook-server](https://logbook.codicent.ai):
 
 ```powershell
-$env:LOGBOOK_PROJECT = "dint"
-$env:LOGBOOK_API_KEY = "test-local-key"
+$env:LOGBOOK_PROJECT = "test"
+$env:LOGBOOK_API_KEY = "123123"
 logbook-server
-# UI:  http://127.0.0.1:5100
-# MCP: http://127.0.0.1:5100/mcp
 ```
 
-2. Have at least one engine CLI on PATH and logged in: `claude`, `codex`, `grok`, or `copilot`.
+2. Copy `.env.example` to `.env` in this folder and set the **same** project and API key (cmd `set` does not apply to PowerShell).
 
-3. Install and chat:
+3. Have at least one engine CLI on PATH and logged in: `claude`, `codex`, `grok`, or `copilot`.
 
 ```powershell
 cd C:\Users\JohanIsaksson\src\dint
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
-dint start claude .
-# → <chat_id>
+dint doctor
+dint start grok .
 dint send <chat_id> "Summarize this repo"
-dint send <chat_id> "List the risks"   # same engine session
+dint chats
 dint list <chat_id>
 dint show <chat_id>
 ```
 
-Same with `codex`, `grok`, or `copilot`. `Ctrl+C` during `send` cancels the in-process turn.
+`dint doctor` checks Logbook health/auth and whether the four CLIs are on PATH.
+
+## Jobs
+
+`dint serve` listens for Logbook `message.created` webhooks. A `#job` message starts a chat in the background:
+
+```
+@test #job #claude
+{"engine":"claude","cwd":"C:\\src\\myproj","prompt":"Summarize this repo"}
+```
+
+or `@test #job #grok Summarize this repo`.
+
+```powershell
+dint serve
+# POST http://127.0.0.1:8787/webhook
+```
+
+If register fails, start logbook with `LOGBOOK_WEBHOOK_URL=http://127.0.0.1:8787/webhook`. Completed turns are stored on `#chat-<id>` like a normal `send`. Ack is `#job-run` (not `#job`, so it does not loop).
 
 Python:
 
@@ -58,6 +73,8 @@ for ev in r.send(chat_id, "Summarize this repo"):
 | `LOGBOOK_URL` | `http://127.0.0.1:5100` |
 | `LOGBOOK_API_KEY` | `test-local-key` |
 | `LOGBOOK_PROJECT` | `dint` |
-| `LOGBOOK_TRANSPORT` | `rest` (`mcp` uses `/mcp` `post_message` / `get_messages` / `get_message_history`) |
+| `LOGBOOK_TRANSPORT` | `rest` |
+| `DINT_JOBS_PORT` | `8787` |
+| `LOGBOOK_WEBHOOK_SECRET` | _(optional HMAC)_ |
 
-Each chat is a Codicent-style thread: the header is the root; every later message sets `parentId` to the previous one. User turns are tagged `#user`, engine replies `#bot`. Engine tag is `#claude` / `#codex` / `#grok` / `#copilot`. Load a conversation with Logbook `GetMessageHistory` (header id) or `GET /api/messages?search=#chat-<id>`.
+Each chat is a Codicent-style thread: the header is the root; every later message sets `parentId` to the previous one. User turns are tagged `#user`, engine replies `#bot`. Load a conversation with Logbook `GetMessageHistory` (header id) or `GET /api/messages?search=#chat-<id>`.

@@ -45,6 +45,22 @@ class McpLogbook:
             return list(result.get("messages") or result.get("items") or [])
         return []
 
+    def get_message(self, message_id: str) -> dict | None:
+        result = self._tool("get_message_by_id", {"messageId": message_id})
+        if isinstance(result, dict) and (result.get("id") or result.get("Id") or result.get("content")):
+            return result
+        rows = self.get_messages(message_id, length=20)
+        for row in rows:
+            if str(row.get("id") or row.get("Id") or "") == message_id:
+                return row
+        return rows[0] if rows else None
+
+    def register_webhook(self, url: str, secret: str = "", event_types: str = "message.created") -> Any:
+        args: dict[str, Any] = {"url": url, "eventTypes": event_types}
+        if secret:
+            args["secret"] = secret
+        return self._tool("register_webhook", args)
+
     def get_history(self, message_id: str) -> list[dict]:
         result = self._tool("get_message_history", {"messageId": message_id})
         if isinstance(result, list):

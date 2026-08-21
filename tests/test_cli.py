@@ -29,6 +29,9 @@ def test_cli_start_and_list(monkeypatch, capsys) -> None:
     assert "hello" in out and "ok" in out
     assert main(["show", chat_id]) == 0
     assert "ses-cli" in capsys.readouterr().out
+    assert main(["chats"]) == 0
+    chats_out = capsys.readouterr().out
+    assert chat_id in chats_out
 
 
 def test_cli_streams_tokens_inline(capsys) -> None:

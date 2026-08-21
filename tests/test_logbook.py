@@ -90,3 +90,21 @@ def test_parent_id_chains_user_and_bot() -> None:
     turns = store.list_turns("abc123abc123")
     assert [t["role"] for t in turns] == ["user", "bot"]
     assert turns[0]["text"] == "hi"
+
+
+def test_list_chats_groups_headers() -> None:
+    ledger = MemoryLogbook()
+    store = ChatLog(ledger, project="dint")
+    a = Chat(chat_id="aaa111aaa111", engine="claude", cwd=r"C:\a")
+    b = Chat(chat_id="bbb222bbb222", engine="codex", cwd=r"C:\b")
+    store.post(a, "header")
+    store.post(a, "user", "first")
+    store.post(b, "header")
+    store.post(b, "user", "second")
+    chats = store.list_chats()
+    ids = [c["chatId"] for c in chats]
+    assert "aaa111aaa111" in ids
+    assert "bbb222bbb222" in ids
+    by_id = {c["chatId"]: c for c in chats}
+    assert by_id["aaa111aaa111"]["engine"] == "claude"
+    assert by_id["bbb222bbb222"]["preview"] == "second"
