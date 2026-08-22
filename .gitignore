@@ -14,3 +14,4 @@ logbook-dev.db
 logbook-dev.db-*
 /dint/
 /test/
+/default/
