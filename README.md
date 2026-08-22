@@ -19,31 +19,40 @@ v0: local, four engines, webhook jobs. Not a hosted product and not a desktop UI
 
 ## Install
 
-Python 3.11+, then at least one engine CLI on PATH and logged in: [`claude`](https://docs.anthropic.com/en/docs/claude-code), [`codex`](https://github.com/openai/codex), [`grok`](https://grok.com), or [`copilot`](https://docs.github.com/en/copilot/how-tos/use-copilot-agent-mode).
-
-Run [logbook-server](https://logbook.codicent.ai) locally (or point at a remote Logbook). Copy `.env.example` to `.env` and set the same project and API key the server uses.
+Python 3.11+ and [pipx](https://pipx.pypa.io/), at least one engine CLI on PATH (`grok`, `claude`, `codex`, or `copilot`), and [logbook-server](https://logbook.codicent.ai) on PATH.
 
 ```bash
-git clone https://github.com/izaxon/dint.git
-cd dint
-python -m venv .venv
-# Windows: .\.venv\Scripts\Activate.ps1
-source .venv/bin/activate
-pip install -e ".[dev]"
-dint status
+# Windows
+iwr https://logbook.codicent.ai/install.ps1 | iex
+# Linux / macOS
+curl -fsSL https://logbook.codicent.ai/install.sh | bash
+
+pipx install dint-cli
 ```
 
-`dint status` checks Logbook health/auth and whether the four CLIs are on PATH.
+The PyPI name is `dint-cli` (`dint` is taken). From a checkout: `pipx install .` or `pip install -e ".[dev]"`.
+
+Then, in any folder:
+
+```bash
+dint
+```
+
+That starts logbook-server and a background `dint serve` if they are not running, then opens a chat in the current directory (same idea as running `grok` in a new folder). Config lives in `~/.dint`. `dint grok "Summarize this repo"` is a one-shot; `dint status` checks Logbook, serve, and engine CLIs.
 
 ## Chat
 
 ```bash
+dint
+dint grok "Summarize this repo"
 dint start grok .
 dint send <chat_id> "Summarize this repo"
 dint chats
 dint list <chat_id>
 dint show <chat_id>
 ```
+
+Bare `dint` resumes the latest chat for this folder, or starts one with the first engine CLI on PATH (`DINT_ENGINE` to pick). `/new` starts a fresh chat; `/quit` exits. Logbook and `dint serve` keep running in the background.
 
 Python:
 
@@ -58,7 +67,7 @@ for ev in r.send(chat_id, "Summarize this repo"):
 
 ## Jobs
 
-Keep `dint serve` running. Enqueue from the CLI or by posting a `#job` in Logbook.
+`dint` and `dint job` start a background `dint serve` if it is not running. Enqueue from the CLI or by posting a `#job` in Logbook. Run `dint serve` in the foreground if you want the webhook logs.
 
 ```bash
 dint serve
@@ -87,8 +96,10 @@ Each chat is a Codicent-style thread: the header is the root; every later messag
 
 | Env | Default |
 | --- | --- |
+| `DINT_HOME` | `~/.dint` |
+| `DINT_ENGINE` | first of grok, claude, copilot, codex on PATH |
 | `LOGBOOK_URL` | `http://127.0.0.1:5100` |
-| `LOGBOOK_API_KEY` | `test-local-key` |
+| `LOGBOOK_API_KEY` | generated on first run |
 | `LOGBOOK_PROJECT` | `dint` |
 | `LOGBOOK_TRANSPORT` | `rest` |
 | `DINT_JOBS_PORT` | `8787` |

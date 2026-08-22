@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import shutil
 
+from dint.envfile import home_dir
 from dint.logbook import LogbookError, default_logbook
 from dint.logbook.rest import RestLogbook
 from dint.router import ENGINES
+from dint.runtime import jobs_url, pick_engine, serve_running
 
 
 def run_status() -> int:
@@ -13,6 +15,7 @@ def run_status() -> int:
     project = os.environ.get("LOGBOOK_PROJECT", "dint")
     key = os.environ.get("LOGBOOK_API_KEY", "")
     env_path = os.environ.get("DINT_ENV_FILE") or ""
+    print(f"home:      {home_dir()}")
     print(f"env file:  {env_path or '(none)'}")
     print(f"logbook:   {url}")
     print(f"project:   {project}")
@@ -34,6 +37,15 @@ def run_status() -> int:
     except LogbookError as e:
         print(f"auth:      FAIL  {e}")
         failed += 1
+
+    hook = jobs_url()
+    if serve_running():
+        print(f"serve:     OK  {hook}")
+    else:
+        print(f"serve:     down  {hook}  (started on first dint)")
+
+    engine = pick_engine()
+    print(f"default:   {engine or 'NONE — install grok, claude, copilot, or codex'}")
 
     missing: list[str] = []
     for name in sorted(ENGINES):

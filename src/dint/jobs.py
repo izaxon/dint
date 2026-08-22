@@ -127,13 +127,17 @@ def serve(host: str = "127.0.0.1", port: int = 8787, *, register: bool = True) -
     httpd = ThreadingHTTPServer((host, port), _handler(router))
     hook = f"http://{host}:{port}/webhook"
     print(f"dint jobs listening on {hook}", flush=True)
+    thread = threading.Thread(target=httpd.serve_forever, name="dint-serve", daemon=True)
+    thread.start()
     if register:
         _try_register(hook)
     else:
         print(f"set LOGBOOK_WEBHOOK_URL={hook} on logbook-server", flush=True)
     try:
-        httpd.serve_forever()
+        while thread.is_alive():
+            thread.join(timeout=0.5)
     except KeyboardInterrupt:
+        httpd.shutdown()
         print("stopped", flush=True)
 
 
@@ -142,7 +146,17 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
-            sys.stderr.write("%s\n" % (fmt % args))
+            line = fmt % args
+            if "/health" in line:
+                return
+            sys.stderr.write("%s\n" % line)
+
+        def do_GET(self) -> None:  # noqa: N802
+            path = urlparse(self.path).path
+            if path in {"/", "/health"}:
+                self._ok({"ok": True, "service": "dint-serve"})
+                return
+            self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path

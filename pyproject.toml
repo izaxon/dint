@@ -1,5 +1,5 @@
 [project]
-name = "dint"
+name = "dint-cli"
 version = "0.1.0"
 description = "One local chat API over Claude, Codex, Grok, and Copilot. Codicent Logbook is the ledger."
 readme = "README.md"

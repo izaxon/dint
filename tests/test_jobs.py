@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import threading
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
 
-from dint.jobs import handle_event, parse_job, post_job, wait_for_job_chat
+from dint.jobs import _handler, handle_event, parse_job, post_job, wait_for_job_chat
 from dint.logbook import ChatLog
 from dint.router import Router
 from dint.types import Event
@@ -169,3 +172,25 @@ def test_handle_event_logbook_pascal_case(monkeypatch) -> None:
     )
     assert chat_id
     assert engine.calls[0]["prompt"] == "vad kan du göra?"
+
+
+def test_serve_health_endpoint() -> None:
+    ledger = MemoryLogbook()
+    router = Router(
+        store=ChatLog(ledger, project="test"),
+        engines={"grok": FakeEngine("grok", [])},
+    )
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(router))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = httpd.server_address[1]
+        conn = HTTPConnection("127.0.0.1", port, timeout=2)
+        conn.request("GET", "/health")
+        resp = conn.getresponse()
+        body = json.loads(resp.read())
+        assert resp.status == 200
+        assert body["ok"] is True
+        assert body["service"] == "dint-serve"
+    finally:
+        httpd.shutdown()

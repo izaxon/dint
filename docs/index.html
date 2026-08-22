@@ -240,15 +240,14 @@
   <h2>Logbook plus one engine CLI.</h2>
   <div class="code-card">
     <div class="code-head"><span class="dots"><i></i><i></i><i></i></span> install</div>
-    <pre><span class="c-k">git</span> clone https://github.com/izaxon/dint.git
-<span class="c-k">cd</span> dint
-<span class="c-k">python</span> -m venv .venv && source .venv/bin/activate
-<span class="c-k">pip</span> install -e <span class="c-s">".[dev]"</span>
-<span class="c-k">cp</span> .env.example .env
-<span class="c-w">dint status</span>
-<span class="c-w">dint start grok .</span></pre>
+    <pre><span class="c-c"># once: logbook-server + pipx</span>
+<span class="c-k">iwr</span> https://logbook.codicent.ai/install.ps1 <span class="c-k">|</span> iex
+<span class="c-k">pipx</span> install dint-cli
+
+<span class="c-c"># in any folder, like grok</span>
+<span class="c-w">dint</span></pre>
   </div>
-  <p class="lead" style="margin-top:22px">Start <a href="https://logbook.codicent.ai">logbook-server</a> with the same project and API key as <code>.env</code>. Full commands are in the <a href="https://github.com/izaxon/dint#readme">README</a>.</p>
+  <p class="lead" style="margin-top:22px"><code>dint</code> starts logbook-server and a background <code>dint serve</code> if they are not running, then chats in the current directory. Needs <a href="https://logbook.codicent.ai">logbook-server</a> and one engine CLI on PATH. Linux/macOS: <code>curl -fsSL https://logbook.codicent.ai/install.sh | bash</code>. Full commands are in the <a href="https://github.com/izaxon/dint#readme">README</a>.</p>
 </section>
 
 <footer>
