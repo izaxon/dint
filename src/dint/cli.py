@@ -9,7 +9,7 @@ import sys
 from dint import __version__
 from dint.envfile import load_dotenv
 from dint.router import ENGINES, Router
-from dint.runtime import ensure_runtime, pick_engine, serve_running
+from dint.runtime import ensure_runtime, jobs_url, logbook_url, pick_engine, serve_running
 
 COMMANDS = {
     "start",
@@ -35,9 +35,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(
         prog="dint",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Chat router over Claude, Codex, Grok, and Copilot. "
-            "Run `dint` or `dint grok` in a folder to start logbook + serve and chat."
+            "No command opens a chat in this folder (starts logbook + serve)."
+        ),
+        epilog=(
+            "examples:\n"
+            "  dint                          chat REPL  (/help inside)\n"
+            "  dint grok \"Summarize this\"    one-shot\n"
+            "  dint job grok \"Summarize this\"  enqueue a #job"
         ),
     )
     p.add_argument("--version", action="version", version=f"dint {__version__}")
@@ -174,11 +181,12 @@ def run_chat(engine: str | None, prompt: str | None) -> int:
             print("dint: pass a prompt, or run in a terminal", file=sys.stderr)
             return 2
     router = Router()
+    had = any(_cwd_key(str(c.get("cwd") or "")) == _cwd_key(cwd) for c in router.list_chats())
     engine, chat_id = _resume_or_start(router, engine, cwd)
-    print(f"{engine}  {cwd}  {chat_id}", file=sys.stderr)
     if prompt:
+        print(f"{engine}  {cwd}  {chat_id}", file=sys.stderr)
         return _send(router, chat_id, prompt)
-    return _repl(router, engine, cwd, chat_id)
+    return _repl(router, engine, cwd, chat_id, fresh=not had)
 
 
 def _resume_or_start(router: Router, engine: str | None, cwd: str) -> tuple[str, str]:
@@ -204,29 +212,144 @@ def _resume_or_start(router: Router, engine: str | None, cwd: str) -> tuple[str,
     return engine, router.start_chat(engine, cwd)
 
 
-def _repl(router: Router, engine: str, cwd: str, chat_id: str) -> int:
-    print("message, /new, /quit", file=sys.stderr)
+def _repl(router: Router, engine: str, cwd: str, chat_id: str, *, fresh: bool) -> int:
+    _print_banner(engine, cwd, chat_id, fresh=fresh)
     while True:
         try:
-            line = input()
+            line = input(f"{engine}> ")
         except (EOFError, KeyboardInterrupt):
             print(file=sys.stderr)
             return 0
         text = line.strip()
         if not text:
             continue
-        if text in {"/quit", "/exit", "/q"}:
-            return 0
-        if text == "/new":
-            chat_id = router.start_chat(engine, cwd)
-            print(f"{engine}  {cwd}  {chat_id}", file=sys.stderr)
-            continue
         if text.startswith("/"):
-            print("commands: /new /quit", file=sys.stderr)
+            action, engine, chat_id = _slash(router, engine, cwd, chat_id, text)
+            if action == "quit":
+                return 0
             continue
         code = _send(router, chat_id, text, quiet_done=True)
         if code != 0:
             return code
+
+
+def _print_banner(engine: str, cwd: str, chat_id: str, *, fresh: bool) -> None:
+    print(f"{engine}    {cwd}    chat {chat_id}", file=sys.stderr)
+    print(f"logbook {logbook_url()}    serve {jobs_url()}", file=sys.stderr)
+    if fresh:
+        print(
+            f'no chats here yet — type a prompt, or:  dint job {engine} "Summarize this repo"',
+            file=sys.stderr,
+        )
+    print("/engine  /job  /chats  /new  /help    quit: Ctrl-C or /quit", file=sys.stderr)
+
+
+def _print_help(engine: str) -> None:
+    print(
+        "slash:\n"
+        "  /engine              CLIs on PATH\n"
+        "  /engine claude       switch engine (new or resume in this folder)\n"
+        "  /job [engine] text   enqueue a #job (dint serve runs it)\n"
+        "  /chats               chats in this folder\n"
+        "  /status              logbook + engines\n"
+        "  /new                 new chat, same engine\n"
+        "  /help  /quit\n"
+        "same from another shell:\n"
+        f'  dint job {engine} "Summarize this repo"\n'
+        "  dint chats\n"
+        "  dint status",
+        file=sys.stderr,
+    )
+
+
+def _slash(
+    router: Router, engine: str, cwd: str, chat_id: str, text: str
+) -> tuple[str, str, str]:
+    parts = text.split()
+    cmd = parts[0].lower()
+    args = parts[1:]
+    if cmd in {"/quit", "/exit", "/q"}:
+        return "quit", engine, chat_id
+    if cmd == "/help":
+        _print_help(engine)
+        return "ok", engine, chat_id
+    if cmd == "/new":
+        chat_id = router.start_chat(engine, cwd)
+        print(f"{engine}    {cwd}    chat {chat_id}", file=sys.stderr)
+        return "ok", engine, chat_id
+    if cmd == "/engine":
+        if not args:
+            _print_engines(engine)
+            return "ok", engine, chat_id
+        name = args[0].lower()
+        if name not in ENGINES:
+            print(f"unknown engine: {name}  ({', '.join(sorted(ENGINES))})", file=sys.stderr)
+            return "ok", engine, chat_id
+        if shutil.which(name) is None:
+            print(f"{name} is not on PATH", file=sys.stderr)
+            return "ok", engine, chat_id
+        engine, chat_id = _resume_or_start(router, name, cwd)
+        print(f"{engine}    {cwd}    chat {chat_id}", file=sys.stderr)
+        return "ok", engine, chat_id
+    if cmd == "/chats":
+        _print_chats(router, cwd, chat_id)
+        return "ok", engine, chat_id
+    if cmd == "/status":
+        from dint.status import run_status
+
+        run_status()
+        return "ok", engine, chat_id
+    if cmd == "/job":
+        _slash_job(router, engine, cwd, args)
+        return "ok", engine, chat_id
+    print("commands: /engine /job /chats /status /new /help /quit", file=sys.stderr)
+    return "ok", engine, chat_id
+
+
+def _slash_job(router: Router, engine: str, cwd: str, args: list[str]) -> None:
+    from dint.jobs import post_job, wait_for_job_chat
+
+    if not args:
+        print(f'/job [engine] prompt    e.g.  /job {engine} Summarize this repo', file=sys.stderr)
+        return
+    job_engine = engine
+    prompt_parts = args
+    if args[0].lower() in ENGINES:
+        job_engine = args[0].lower()
+        prompt_parts = args[1:]
+    prompt = " ".join(prompt_parts).strip()
+    if not prompt:
+        print("/job: prompt required", file=sys.stderr)
+        return
+    job_id = post_job(router, job_engine, prompt, cwd)
+    print(f"job\t{job_id}", file=sys.stderr)
+    new_chat = wait_for_job_chat(router, job_id)
+    if new_chat:
+        print(f"chat\t{new_chat}    dint list {new_chat}", file=sys.stderr)
+    else:
+        print("waiting for dint serve... try: /chats", file=sys.stderr)
+
+
+def _print_engines(current: str) -> None:
+    for name in sorted(ENGINES):
+        path = shutil.which(name)
+        mark = "*" if name == current else " "
+        print(f"{mark} {name:8} {path or 'NOT ON PATH'}", file=sys.stderr)
+
+
+def _print_chats(router: Router, cwd: str, current: str) -> None:
+    key = _cwd_key(cwd)
+    rows = [c for c in router.list_chats() if _cwd_key(str(c.get("cwd") or "")) == key]
+    if not rows:
+        print("no chats in this folder    dint chats", file=sys.stderr)
+        return
+    for c in rows:
+        mark = "*" if c.get("chatId") == current else " "
+        preview = (c.get("preview") or "").replace("\n", " ")[:50]
+        print(
+            f"{mark} {c.get('ts')}\t{c.get('chatId')}\t{c.get('engine')}\t{preview}",
+            file=sys.stderr,
+        )
 
 
 def _send(router: Router, chat_id: str, prompt: str, *, quiet_done: bool = False) -> int:

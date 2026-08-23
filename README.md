@@ -52,7 +52,7 @@ dint list <chat_id>
 dint show <chat_id>
 ```
 
-Bare `dint` resumes the latest chat for this folder, or starts one with the first engine CLI on PATH (`DINT_ENGINE` to pick). `/new` starts a fresh chat; `/quit` exits. Logbook and `dint serve` keep running in the background.
+Bare `dint` opens a chat in this folder (starts logbook + serve). Inside: `/engine`, `/job`, `/chats`, `/new`, `/help`. `DINT_ENGINE` picks the default CLI. Logbook and `dint serve` keep running in the background.
 
 Python:
 

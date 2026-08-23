@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 from dint.cli import EventPrinter, _job_cwd_prompt, main
 from dint.logbook import ChatLog
@@ -106,6 +107,72 @@ def test_dint_resumes_same_cwd(monkeypatch, capsys, tmp_path) -> None:
     assert router.list_chats()[0]["chatId"] == chat_id
     turns = router.list_turns(chat_id)
     assert [t.get("text") for t in turns if t.get("role") == "user"] == ["first", "second"]
+
+
+def test_repl_help_engine_quit(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dint.cli.ensure_runtime", lambda **k: None)
+    monkeypatch.setattr("dint.cli.pick_engine", lambda: "grok")
+    monkeypatch.setattr("dint.cli.shutil.which", lambda name: f"/bin/{name}" if name != "codex" else None)
+    monkeypatch.setattr("dint.cli.logbook_url", lambda: "http://127.0.0.1:5101")
+    monkeypatch.setattr("dint.cli.jobs_url", lambda: "http://127.0.0.1:8787")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    router = Router(
+        store=ChatLog(MemoryLogbook(), project="dint"),
+        engines={"grok": FakeEngine("grok", []), "claude": FakeEngine("claude", [])},
+    )
+    monkeypatch.setattr("dint.cli.Router", lambda: router)
+    lines = iter(["/help", "/engine", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    assert main([]) == 0
+    err = capsys.readouterr().err
+    assert "/job" in err and "dint job" in err
+    assert "* grok" in err
+    assert "NOT ON PATH" in err
+    assert "no chats here yet" in err
+    assert "grok    " in err or "chat " in err
+
+
+def test_repl_engine_switch(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dint.cli.ensure_runtime", lambda **k: None)
+    monkeypatch.setattr("dint.cli.pick_engine", lambda: "grok")
+    monkeypatch.setattr("dint.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("dint.cli.logbook_url", lambda: "http://127.0.0.1:5100")
+    monkeypatch.setattr("dint.cli.jobs_url", lambda: "http://127.0.0.1:8787")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    router = Router(
+        store=ChatLog(MemoryLogbook(), project="dint"),
+        engines={"grok": FakeEngine("grok", []), "claude": FakeEngine("claude", [])},
+    )
+    monkeypatch.setattr("dint.cli.Router", lambda: router)
+    lines = iter(["/engine claude", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    assert main([]) == 0
+    engines = {c["engine"] for c in router.list_chats()}
+    assert "claude" in engines
+
+
+def test_repl_job(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dint.cli.ensure_runtime", lambda **k: None)
+    monkeypatch.setattr("dint.cli.pick_engine", lambda: "grok")
+    monkeypatch.setattr("dint.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("dint.cli.logbook_url", lambda: "http://127.0.0.1:5100")
+    monkeypatch.setattr("dint.cli.jobs_url", lambda: "http://127.0.0.1:8787")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    router = Router(
+        store=ChatLog(MemoryLogbook(), project="dint"),
+        engines={"grok": FakeEngine("grok", [])},
+    )
+    monkeypatch.setattr("dint.cli.Router", lambda: router)
+    monkeypatch.setattr("dint.jobs.post_job", lambda router, engine, prompt, cwd: "job-1")
+    monkeypatch.setattr("dint.jobs.wait_for_job_chat", lambda router, job_id, timeout=20: "chatjob")
+    lines = iter(["/job Summarize this repo", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    assert main([]) == 0
+    err = capsys.readouterr().err
+    assert "job-1" in err and "chatjob" in err
 
 
 def test_cli_streams_tokens_inline(capsys) -> None:

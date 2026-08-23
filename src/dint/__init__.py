@@ -4,4 +4,4 @@ from dint.router import Router
 from dint.types import Chat, Event
 
 __all__ = ["Chat", "Event", "Router"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
