@@ -52,7 +52,7 @@ dint list <chat_id>
 dint show <chat_id>
 ```
 
-Bare `dint` opens a chat in this folder (starts logbook + serve). Inside: `/engine`, `/job`, `/chats`, `/new`, `/help`. `DINT_ENGINE` picks the default CLI. Logbook and `dint serve` keep running in the background.
+Bare `dint` opens a chat in this folder (starts logbook + serve). Inside: `/engine`, `/job`, `/chats`, `/new`, `/help`. Any other `/line` (say `/login`) goes to the engine; `//help` sends a literal `/help`. `DINT_ENGINE` picks the default CLI. Logbook and `dint serve` keep running in the background.
 
 Python:
 
