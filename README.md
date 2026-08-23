@@ -38,7 +38,7 @@ Then, in any folder:
 dint
 ```
 
-That starts logbook-server and a background `dint serve` if they are not running, then opens a chat in the current directory (same idea as running `grok` in a new folder). Config lives in `~/.dint`. `dint grok "Summarize this repo"` is a one-shot; `dint status` checks Logbook, serve, and engine CLIs.
+That starts logbook-server and a background `dint serve` if they are not running, then opens a chat in the current directory (same idea as running `grok` in a new folder). One logbook covers every folder on the machine — chats store `cwd`; you do not get a server per repo. Config lives in `~/.dint`. If port 5100 already has someone else's logbook, dint picks the next free port and writes it to `~/.dint/.env`. `dint grok "Summarize this repo"` is a one-shot; `dint status` checks Logbook, serve, and engine CLIs.
 
 ## Chat
 

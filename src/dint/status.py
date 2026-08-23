@@ -36,6 +36,11 @@ def run_status() -> int:
         print("auth:      OK")
     except LogbookError as e:
         print(f"auth:      FAIL  {e}")
+        if "401" in str(e) or "Unauthorized" in str(e):
+            print(
+                "note:      this URL is another logbook's key. Run `dint` and it will "
+                "start its own on the next free port, or put the server's key in ~/.dint/.env."
+            )
         failed += 1
 
     hook = jobs_url()

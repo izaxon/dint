@@ -28,7 +28,7 @@ def _env(name: str, default: str) -> str:
 
 def default_logbook() -> Logbook:
     url = _env("LOGBOOK_URL", "http://127.0.0.1:5100")
-    key = _env("LOGBOOK_API_KEY", "test-local-key")
+    key = _env("LOGBOOK_API_KEY", "")
     if _env("LOGBOOK_TRANSPORT", "rest") == "mcp":
         return McpLogbook(url, key)
     return RestLogbook(url, key)

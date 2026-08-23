@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -14,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from dint.envfile import home_dir, home_env_path, write_env
+from dint.logbook.rest import LogbookError, RestLogbook
 
 LOGBOOK_INSTALL = "https://logbook.codicent.ai"
 
@@ -29,24 +32,37 @@ def ensure_defaults() -> None:
     home_dir().mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("LOGBOOK_URL", "http://127.0.0.1:5100")
     os.environ.setdefault("LOGBOOK_PROJECT", "dint")
-    if not os.environ.get("LOGBOOK_API_KEY", "").strip():
-        os.environ["LOGBOOK_API_KEY"] = secrets.token_urlsafe(16)
     path = home_env_path()
     if not path.is_file():
-        write_env(
-            path,
-            {
-                "LOGBOOK_URL": os.environ["LOGBOOK_URL"],
-                "LOGBOOK_API_KEY": os.environ["LOGBOOK_API_KEY"],
-                "LOGBOOK_PROJECT": os.environ["LOGBOOK_PROJECT"],
-            },
-        )
+        _write_home_env()
         os.environ.setdefault("DINT_ENV_FILE", str(path))
 
 
 def ensure_logbook() -> None:
-    if probe(logbook_url() + "/health"):
+    """Reuse a reachable logbook we can auth to; otherwise start one for this machine.
+
+    One logbook-server process is one project/database. dint does not start a
+    server per repo: chats already store cwd. If :5100 is someone else's
+    logbook (401), pick the next free port and persist it in ~/.dint/.env.
+    """
+    health = logbook_health()
+    if health is not None and _auth_ok():
+        running = str(health.get("project") or "")
+        ours = os.environ.get("LOGBOOK_PROJECT", "dint")
+        if running and running != ours:
+            _note(f"using logbook project={running} at {logbook_url()}")
         return
+    if health is not None:
+        _note(f"{logbook_url()} is another logbook; starting dint's own")
+        _relocate_logbook_port()
+    elif not can_bind(logbook_host(), logbook_port()):
+        _relocate_logbook_port()
+    _spawn_logbook()
+    ensure_logbook_auth(logbook_health())
+
+
+def _spawn_logbook() -> None:
+    _ensure_own_api_key()
     binary = shutil.which("logbook-server")
     if not binary:
         raise RuntimeError(
@@ -74,11 +90,90 @@ def ensure_logbook() -> None:
         )
 
 
+def _auth_ok() -> bool:
+    rest = RestLogbook(logbook_url(), os.environ.get("LOGBOOK_API_KEY", "").strip())
+    try:
+        rest.get_messages(length=1)
+        return True
+    except LogbookError as e:
+        if "401" in str(e) or "Unauthorized" in str(e):
+            return False
+        raise RuntimeError(str(e)) from e
+
+
+def ensure_logbook_auth(health: dict | None = None) -> None:
+    if _auth_ok():
+        return
+    env_file = os.environ.get("DINT_ENV_FILE") or str(home_env_path())
+    running = ""
+    if health and health.get("project"):
+        running = f" Server project is {health['project']}."
+    raise RuntimeError(
+        f"logbook at {logbook_url()} rejected dint's API key.{running}\n"
+        f"dint read LOGBOOK_API_KEY from {env_file}."
+    )
+
+
+def _relocate_logbook_port() -> None:
+    host = logbook_host()
+    start = logbook_port() + 1
+    port = find_free_port(host, start)
+    os.environ["LOGBOOK_URL"] = f"{logbook_scheme()}://{host}:{port}"
+    _write_home_env()
+    _note(f"logbook {os.environ['LOGBOOK_URL']}")
+
+
+def find_free_port(host: str, start: int, *, count: int = 30) -> int:
+    bind_host = "127.0.0.1" if host in {"localhost", "127.0.0.1", "::1"} else host
+    for port in range(start, start + count):
+        if probe(f"http://{bind_host}:{port}/health"):
+            continue
+        if can_bind(bind_host, port):
+            return port
+    raise RuntimeError(f"no free port in {start}-{start + count - 1} for logbook-server")
+
+
+def can_bind(host: str, port: int) -> bool:
+    bind_host = "127.0.0.1" if host in {"localhost", ""} else host
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((bind_host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def _ensure_own_api_key() -> None:
+    if os.environ.get("LOGBOOK_API_KEY", "").strip():
+        return
+    os.environ["LOGBOOK_API_KEY"] = secrets.token_urlsafe(16)
+    _write_home_env()
+
+
+def _write_home_env() -> None:
+    values = {
+        "LOGBOOK_URL": os.environ.get("LOGBOOK_URL", "http://127.0.0.1:5100"),
+        "LOGBOOK_PROJECT": os.environ.get("LOGBOOK_PROJECT", "dint"),
+    }
+    key = os.environ.get("LOGBOOK_API_KEY", "").strip()
+    if key:
+        values["LOGBOOK_API_KEY"] = key
+    values["DINT_JOBS_PORT"] = str(jobs_port())
+    write_env(home_env_path(), values)
+
+
 def ensure_serve() -> None:
     if os.environ.get("DINT_ROLE") == "serve":
         return
     if probe(jobs_url() + "/health"):
         return
+    if not can_bind(jobs_host(), jobs_port()):
+        port = find_free_port(jobs_host(), jobs_port() + 1)
+        os.environ["DINT_JOBS_PORT"] = str(port)
+        _write_home_env()
+        _note(f"dint serve {jobs_url()}")
     env = os.environ.copy()
     env["DINT_ROLE"] = "serve"
     pid = spawn_detached(
@@ -123,6 +218,18 @@ def logbook_url() -> str:
     return os.environ.get("LOGBOOK_URL", "http://127.0.0.1:5100").rstrip("/")
 
 
+def logbook_scheme() -> str:
+    return urlparse(logbook_url()).scheme or "http"
+
+
+def logbook_host() -> str:
+    return urlparse(logbook_url()).hostname or "127.0.0.1"
+
+
+def logbook_port() -> int:
+    return urlparse(logbook_url()).port or 5100
+
+
 def jobs_host() -> str:
     return os.environ.get("DINT_JOBS_HOST", "127.0.0.1")
 
@@ -139,6 +246,20 @@ def logbook_install_cmd() -> str:
     if sys.platform == "win32":
         return "iwr https://logbook.codicent.ai/install.ps1 | iex"
     return "curl -fsSL https://logbook.codicent.ai/install.sh | bash"
+
+
+def logbook_health(*, timeout: float = 1.5) -> dict | None:
+    try:
+        req = urllib.request.Request(
+            logbook_url() + "/health",
+            method="GET",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+            return data if isinstance(data, dict) else {"raw": data}
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, json.JSONDecodeError):
+        return None
 
 
 def probe(url: str, timeout: float = 1.5) -> bool:
