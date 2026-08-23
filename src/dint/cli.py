@@ -223,12 +223,16 @@ def _repl(router: Router, engine: str, cwd: str, chat_id: str, *, fresh: bool) -
         text = line.strip()
         if not text:
             continue
-        if text.startswith("/"):
+        send_text = text
+        if text.startswith("//"):
+            send_text = text[1:]
+        elif text.startswith("/"):
             action, engine, chat_id = _slash(router, engine, cwd, chat_id, text)
             if action == "quit":
                 return 0
-            continue
-        code = _send(router, chat_id, text, quiet_done=True)
+            if action != "send":
+                continue
+        code = _send(router, chat_id, send_text, quiet_done=True)
         if code != 0:
             return code
 
@@ -254,6 +258,8 @@ def _print_help(engine: str) -> None:
         "  /status              logbook + engines\n"
         "  /new                 new chat, same engine\n"
         "  /help  /quit\n"
+        "  /login  (and other unknown /lines) go to the engine\n"
+        "  //help               send /help to the engine\n"
         "same from another shell:\n"
         f'  dint job {engine} "Summarize this repo"\n'
         "  dint chats\n"
@@ -302,8 +308,7 @@ def _slash(
     if cmd == "/job":
         _slash_job(router, engine, cwd, args)
         return "ok", engine, chat_id
-    print("commands: /engine /job /chats /status /new /help /quit", file=sys.stderr)
-    return "ok", engine, chat_id
+    return "send", engine, chat_id
 
 
 def _slash_job(router: Router, engine: str, cwd: str, args: list[str]) -> None:

@@ -175,6 +175,34 @@ def test_repl_job(monkeypatch, capsys, tmp_path) -> None:
     assert "job-1" in err and "chatjob" in err
 
 
+def test_repl_unknown_slash_goes_to_engine(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dint.cli.ensure_runtime", lambda **k: None)
+    monkeypatch.setattr("dint.cli.pick_engine", lambda: "claude")
+    monkeypatch.setattr("dint.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("dint.cli.logbook_url", lambda: "http://127.0.0.1:5100")
+    monkeypatch.setattr("dint.cli.jobs_url", lambda: "http://127.0.0.1:8787")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    claude = FakeEngine(
+        "claude",
+        [
+            [Event(type="text", text="login please"), Event(type="done")],
+            [Event(type="text", text="engine help"), Event(type="done")],
+        ],
+    )
+    router = Router(
+        store=ChatLog(MemoryLogbook(), project="dint"),
+        engines={"claude": claude},
+    )
+    monkeypatch.setattr("dint.cli.Router", lambda: router)
+    lines = iter(["/login", "//help", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    assert main([]) == 0
+    assert [c["prompt"] for c in claude.calls] == ["/login", "/help"]
+    out = capsys.readouterr().out
+    assert "login please" in out and "engine help" in out
+
+
 def test_cli_streams_tokens_inline(capsys) -> None:
     printer = EventPrinter()
     printer.emit(Event(type="text", text="He"))
