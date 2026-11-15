@@ -62,6 +62,15 @@ def test_new_chat_and_followup_keeps_session() -> None:
     assert parents[1] == ids[0]
 
 
+def test_turn_without_text_ends_in_an_error_row() -> None:
+    engine = FakeEngine("claude", [[Event(type="done")]])
+    router, _ = _router(engine)
+    chat_id = router.start_chat("claude", cwd=".")
+    list(router.send(chat_id, "hello"))
+    turns = router.list_turns(chat_id)
+    assert [(t["role"], t["text"]) for t in turns] == [("user", "hello"), ("error", "no reply")]
+
+
 def test_crash_reload_does_not_lose_session_id() -> None:
     engine = FakeEngine(
         "codex",

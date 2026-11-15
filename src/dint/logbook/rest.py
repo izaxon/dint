@@ -49,12 +49,19 @@ class RestLogbook:
         return data if isinstance(data, dict) else {"raw": data}
 
     def get_message(self, message_id: str) -> dict | None:
+        """Exactly this message, or None. Search matches ids too; history is the fallback."""
         rows = self.get_messages(message_id, length=20)
         for row in rows:
-            rid = str(row.get("id") or row.get("Id") or "")
-            if rid == message_id:
+            if str(row.get("id") or row.get("Id") or "") == message_id:
                 return row
-        return rows[0] if rows else None
+        try:
+            history = self.get_history(message_id)
+        except LogbookError:
+            return None
+        for row in history:
+            if str(row.get("id") or row.get("Id") or "") == message_id:
+                return row
+        return None
 
     def get_history(self, message_id: str) -> list[dict]:
         data = self._request("GET", f"/api/messages/{urllib.parse.quote(message_id)}/history")

@@ -41,6 +41,7 @@ class Router:
         self._active[chat_id] = engine
         assistant: list[str] = []
         error: str | None = None
+        completed = False
         saw_session = bool(chat.external_session_id)
         try:
             for event in engine.send(prompt, cwd=chat.cwd, session_id=chat.external_session_id):
@@ -57,11 +58,15 @@ class Router:
                 elif event.type == "error":
                     error = event.text or "error"
                 yield event
+            completed = True
         finally:
             self._active.pop(chat_id, None)
             text = "".join(assistant).strip()
             if text:
                 self.store.post(chat, "bot", text)
+            if not error and not text:
+                # Every turn ends in a bot or error row, so readers can tell it is over.
+                error = "no reply" if completed else "interrupted"
             if error:
                 self.store.post(chat, "error", error)
 

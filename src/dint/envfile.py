@@ -31,8 +31,18 @@ def load_dotenv(start: str | None = None) -> Path | None:
 
 
 def write_env(path: Path, values: dict[str, str]) -> None:
+    """Set KEY=VALUE pairs in an env file; other lines and comments are kept."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"{key}={value}" for key, value in values.items()]
+    pending = dict(values)
+    lines: list[str] = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key = line.partition("=")[0].strip()
+            if "=" in line and not line.lstrip().startswith("#") and key in pending:
+                lines.append(f"{key}={pending.pop(key)}")
+            else:
+                lines.append(line)
+    lines.extend(f"{key}={value}" for key, value in pending.items())
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

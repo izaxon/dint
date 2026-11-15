@@ -46,6 +46,8 @@ If nothing appears, serve is not running or the webhook is registered on a diffe
 
 Parse JSON after the first `{`. Keep `role` in `header` / `session` / `user` / `bot` / `tool` / `error`. The answer is the latest `role=bot` `text`. `#tool` rows are noisy; skip them unless debugging.
 
+Every turn ends in a `bot` or an `error` row (`no reply`, `interrupted`, or the engine's error), so the job is finished once one of them follows the `user` row. From a shell on the serve machine, `dint job --wait <engine> "<task>"` does the polling and `dint last <chatId>` prints the reply.
+
 ## Limits (v0)
 
 One `#job` is one new chat and one turn. There is no `chatId` resume on a job yet. Bot text is written when the engine finishes, not streamed into Logbook.

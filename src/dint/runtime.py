@@ -36,6 +36,24 @@ def ensure_defaults() -> None:
     if not path.is_file():
         _write_home_env()
         os.environ.setdefault("DINT_ENV_FILE", str(path))
+    ensure_webhook_secret()
+
+
+def webhook_secret() -> str:
+    return (
+        os.environ.get("LOGBOOK_WEBHOOK_SECRET") or os.environ.get("DINT_WEBHOOK_SECRET") or ""
+    ).strip()
+
+
+def ensure_webhook_secret() -> str:
+    """dint serve only runs signed webhooks; make sure there is a secret to sign with."""
+    secret = webhook_secret()
+    if secret:
+        return secret
+    secret = secrets.token_urlsafe(32)
+    os.environ["LOGBOOK_WEBHOOK_SECRET"] = secret
+    write_env(home_env_path(), {"LOGBOOK_WEBHOOK_SECRET": secret})
+    return secret
 
 
 def ensure_logbook() -> None:
@@ -76,6 +94,7 @@ def _spawn_logbook() -> None:
     env["LOGBOOK_API_KEY"] = os.environ.get("LOGBOOK_API_KEY", "")
     env["LOGBOOK_PORT"] = str(parsed.port or 5100)
     env["LOGBOOK_WEBHOOK_URL"] = jobs_url() + "/webhook"
+    env["LOGBOOK_WEBHOOK_SECRET"] = ensure_webhook_secret()
     pid = spawn_detached(
         [binary],
         cwd=str(home_dir()),
@@ -167,7 +186,9 @@ def _write_home_env() -> None:
 def ensure_serve() -> None:
     if os.environ.get("DINT_ROLE") == "serve":
         return
-    if probe(jobs_url() + "/health"):
+    health = serve_health()
+    if health is not None:
+        _warn_stale_serve(health)
         return
     if not can_bind(jobs_host(), jobs_port()):
         port = find_free_port(jobs_host(), jobs_port() + 1)
@@ -201,6 +222,21 @@ def ensure_serve() -> None:
 
 def serve_running() -> bool:
     return probe(jobs_url() + "/health")
+
+
+def serve_health() -> dict | None:
+    return _get_json(jobs_url() + "/health")
+
+
+def _warn_stale_serve(health: dict) -> None:
+    from dint import __version__
+
+    running = str(health.get("version") or "")
+    if running == __version__:
+        return
+    pid = health.get("pid")
+    who = f"dint serve {running or '< 0.2.0'}" + (f" (pid {pid})" if pid else "")
+    _note(f"{who} is still running; this is dint {__version__}. Stop it and re-run dint.")
 
 
 def pick_engine() -> str | None:
@@ -249,12 +285,12 @@ def logbook_install_cmd() -> str:
 
 
 def logbook_health(*, timeout: float = 1.5) -> dict | None:
+    return _get_json(logbook_url() + "/health", timeout=timeout)
+
+
+def _get_json(url: str, *, timeout: float = 1.5) -> dict | None:
     try:
-        req = urllib.request.Request(
-            logbook_url() + "/health",
-            method="GET",
-            headers={"Accept": "application/json"},
-        )
+        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
             return data if isinstance(data, dict) else {"raw": data}

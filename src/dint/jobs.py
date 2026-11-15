@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import sys
@@ -11,12 +13,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
+from dint import __version__
+from dint.envfile import home_env_path
 from dint.logbook import extract_json, format_content
 from dint.logbook.mcp import McpLogbook
 from dint.router import ENGINES, Router
+from dint.runtime import webhook_secret
 
 JOB_TAG = "job"
 ACK_TAG = "job-run"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+MAX_BODY = 1_000_000
 _job_lock = threading.Lock()
 
 
@@ -78,6 +85,11 @@ def parse_job(content: str, tags: list[str] | None = None) -> dict[str, str] | N
 
 
 def handle_event(payload: dict[str, Any], router: Router) -> str | None:
+    """Run the #job a webhook points at.
+
+    The webhook only names a message id. The job itself is always read back from
+    Logbook, so a request can never smuggle in its own engine, cwd or prompt.
+    """
     event_type = _pick(payload, "eventType")
     if event_type and str(event_type) not in {"message.created"}:
         return None
@@ -85,31 +97,32 @@ def handle_event(payload: dict[str, Any], router: Router) -> str | None:
     if not isinstance(data, dict):
         data = payload
     message_id = str(_pick(data, "messageId", "id") or "")
-    tags = _as_tags(_pick(data, "tags"))
-    if tags and JOB_TAG not in {_norm_tag(t) for t in tags}:
+    if not message_id:
         return None
-    content = str(_pick(data, "content") or "")
-    if not content and message_id:
-        row = _fetch_message(router, message_id)
-        if row:
-            content = str(row.get("content") or row.get("Content") or "")
-            tags = _as_tags(row.get("tags") or row.get("Tags") or tags)
+    hinted = _as_tags(_pick(data, "tags"))
+    if hinted and JOB_TAG not in {_norm_tag(t) for t in hinted}:
+        return None
+    row = _fetch_message(router, message_id)
+    if row is None:
+        print(f"job {message_id} not found in logbook; ignored", file=sys.stderr, flush=True)
+        return None
+    content = str(row.get("content") or row.get("Content") or "")
+    tags = _as_tags(row.get("tags") or row.get("Tags"))
     job = parse_job(content, tags)
     if job is None:
         return None
-    if message_id:
-        with _job_lock:
-            existing = _chat_id_for_job(router, message_id)
-            if existing:
-                print(f"job {message_id} already chat {existing}", flush=True)
-                return existing
-            started = getattr(router, "_started_jobs", None)
-            if started is None:
-                started = set()
-                router._started_jobs = started
-            if message_id in started:
-                return None
-            started.add(message_id)
+    with _job_lock:
+        existing = _chat_id_for_job(router, message_id)
+        if existing:
+            print(f"job {message_id} already chat {existing}", flush=True)
+            return existing
+        started = getattr(router, "_started_jobs", None)
+        if started is None:
+            started = set()
+            router._started_jobs = started
+        if message_id in started:
+            return None
+        started.add(message_id)
     chat_id = router.start_chat(job["engine"], job["cwd"])
     _ack(router, message_id, chat_id, job)
     print(f"job {message_id} -> chat {chat_id}", flush=True)
@@ -123,16 +136,23 @@ def handle_event(payload: dict[str, Any], router: Router) -> str | None:
 
 
 def serve(host: str = "127.0.0.1", port: int = 8787, *, register: bool = True) -> None:
+    secret = webhook_secret()
+    if not secret:
+        raise RuntimeError("LOGBOOK_WEBHOOK_SECRET is not set; dint serve only runs signed webhooks")
     router = Router()
-    httpd = ThreadingHTTPServer((host, port), _handler(router))
+    httpd = ThreadingHTTPServer((host, port), _handler(router, secret=secret, host=host))
     hook = f"http://{host}:{port}/webhook"
     print(f"dint jobs listening on {hook}", flush=True)
     thread = threading.Thread(target=httpd.serve_forever, name="dint-serve", daemon=True)
     thread.start()
     if register:
-        _try_register(hook)
+        _try_register(hook, secret)
     else:
-        print(f"set LOGBOOK_WEBHOOK_URL={hook} on logbook-server", flush=True)
+        print(
+            f"set LOGBOOK_WEBHOOK_URL={hook} and LOGBOOK_WEBHOOK_SECRET "
+            f"(from {home_env_path()}) on logbook-server",
+            flush=True,
+        )
     try:
         while thread.is_alive():
             thread.join(timeout=0.5)
@@ -141,8 +161,11 @@ def serve(host: str = "127.0.0.1", port: int = 8787, *, register: bool = True) -
         print("stopped", flush=True)
 
 
-def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
+def _handler(
+    router: Router, *, secret: str, host: str = "127.0.0.1"
+) -> type[BaseHTTPRequestHandler]:
     seen: set[str] = set()
+    loopback_only = host in LOOPBACK_HOSTS
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
@@ -154,7 +177,7 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             if path in {"/", "/health"}:
-                self._ok({"ok": True, "service": "dint-serve"})
+                self._ok({"ok": True, "service": "dint-serve", "version": __version__, "pid": os.getpid()})
                 return
             self.send_error(404)
 
@@ -163,11 +186,24 @@ def _handler(router: Router) -> type[BaseHTTPRequestHandler]:
             if path not in {"/", "/webhook", "/jobs"}:
                 self.send_error(404)
                 return
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
-            if not _signature_ok(raw, dict(self.headers)):
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0 or length > MAX_BODY:
+                self.close_connection = True
+                self.send_error(413, "body too large")
+                return
+            # Read the body before any refusal: closing with unread bytes resets the socket.
+            body = self.rfile.read(length) if length else b"{}"
+            refusal = _refuse_request(dict(self.headers), loopback_only=loopback_only)
+            if refusal:
+                self.send_error(*refusal)
+                return
+            if not _signature_ok(body, dict(self.headers), secret):
                 self.send_error(401, "bad signature")
                 return
+            raw = body.decode("utf-8", "replace")
             try:
                 payload = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
@@ -236,51 +272,70 @@ def _ack(router: Router, job_id: str, chat_id: str, job: dict[str, str]) -> None
 
 
 def _fetch_message(router: Router, message_id: str) -> dict[str, Any] | None:
+    """The message with exactly this id, or None. Never a near match."""
     logbook = router.store.logbook
     getter = getattr(logbook, "get_message", None)
-    if callable(getter):
-        row = getter(message_id)
-        if isinstance(row, dict):
-            return row
-    rows = logbook.get_messages(message_id, length=20)
+    rows = [getter(message_id)] if callable(getter) else logbook.get_messages(message_id, length=20)
     for row in rows:
-        if str(row.get("id") or row.get("Id") or "") == message_id:
+        if isinstance(row, dict) and _row_id(row) == message_id:
             return row
-    return rows[0] if rows else None
+    return None
 
 
-def _try_register(hook: str) -> None:
+def _row_id(row: dict[str, Any]) -> str:
+    return str(row.get("id") or row.get("Id") or "")
+
+
+def _try_register(hook: str, secret: str) -> None:
     url = os.environ.get("LOGBOOK_URL", "http://127.0.0.1:5100")
     key = os.environ.get("LOGBOOK_API_KEY", "")
-    secret = os.environ.get("LOGBOOK_WEBHOOK_SECRET") or os.environ.get("DINT_WEBHOOK_SECRET") or ""
     try:
         mcp = McpLogbook(url, key)
+        try:
+            # Registrations stack up per serve restart; drop the old (maybe unsigned) ones.
+            mcp.unregister_webhook(hook)
+        except Exception:
+            pass
         mcp.register_webhook(hook, secret=secret, event_types="message.created")
         print(f"registered webhook at logbook: {hook}", flush=True)
     except Exception as e:
         print(
-            f"could not register webhook ({e}). "
-            f"Start logbook-server with LOGBOOK_WEBHOOK_URL={hook}",
+            f"could not register webhook ({e}). Start logbook-server with "
+            f"LOGBOOK_WEBHOOK_URL={hook} and LOGBOOK_WEBHOOK_SECRET from {home_env_path()}",
             file=sys.stderr,
             flush=True,
         )
 
 
-def _signature_ok(body: str, headers: dict[str, str]) -> bool:
-    import hmac
-    import hashlib
-
-    secret = os.environ.get("LOGBOOK_WEBHOOK_SECRET") or os.environ.get("DINT_WEBHOOK_SECRET") or ""
-    if not secret:
-        return True
-    got = ""
+def _header(headers: dict[str, str], name: str) -> str:
+    name = name.lower()
     for key, value in headers.items():
-        if key.lower() == "x-logbook-signature":
-            got = value
-            break
+        if key.lower() == name:
+            return str(value)
+    return ""
+
+
+def _refuse_request(headers: dict[str, str], *, loopback_only: bool) -> tuple[int, str] | None:
+    """Logbook posts JSON server-to-server. Turn away anything a browser can send."""
+    if _header(headers, "Origin"):
+        return 403, "browser requests are not accepted"
+    content_type = _header(headers, "Content-Type").split(";")[0].strip().lower()
+    if content_type != "application/json":
+        return 415, "expected application/json"
+    if loopback_only:
+        host = urlparse("//" + _header(headers, "Host")).hostname or ""
+        if host.lower() not in LOOPBACK_HOSTS:
+            return 403, "unexpected Host header"
+    return None
+
+
+def _signature_ok(body: bytes, headers: dict[str, str], secret: str) -> bool:
+    if not secret:
+        return False
+    got = _header(headers, "X-Logbook-Signature")
     if not got:
         return False
-    expected = "sha256=" + hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    expected = "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, got)
 
 

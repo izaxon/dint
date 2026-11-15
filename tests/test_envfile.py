@@ -2,7 +2,31 @@ from __future__ import annotations
 
 import os
 
-from dint.envfile import load_dotenv
+from dint.envfile import load_dotenv, write_env
+from dint.runtime import ensure_webhook_secret
+
+
+def test_write_env_keeps_other_lines(tmp_path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("# mine\nDINT_ENGINE=claude\nLOGBOOK_URL=http://old\n", encoding="utf-8")
+    write_env(env, {"LOGBOOK_URL": "http://new", "LOGBOOK_WEBHOOK_SECRET": "s"})
+    assert env.read_text(encoding="utf-8").splitlines() == [
+        "# mine",
+        "DINT_ENGINE=claude",
+        "LOGBOOK_URL=http://new",
+        "LOGBOOK_WEBHOOK_SECRET=s",
+    ]
+
+
+def test_webhook_secret_is_generated_once_and_persisted(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DINT_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text("DINT_ENGINE=grok\n", encoding="utf-8")
+    secret = ensure_webhook_secret()
+    assert len(secret) >= 32
+    assert ensure_webhook_secret() == secret
+    text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "DINT_ENGINE=grok" in text
+    assert f"LOGBOOK_WEBHOOK_SECRET={secret}" in text
 
 
 def test_load_dotenv_does_not_override(tmp_path, monkeypatch) -> None:
