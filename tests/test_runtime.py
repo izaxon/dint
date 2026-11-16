@@ -91,6 +91,9 @@ def test_ensure_logbook_spawns(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("dint.runtime.logbook_health", lambda **k: None)
     monkeypatch.setattr("dint.runtime.ensure_logbook_auth", lambda health=None: None)
     monkeypatch.setattr("dint.runtime.wait_for", lambda url, timeout=12: True)
+    # Keep real ports out of it: a busy 5100 on the runner made this test flaky.
+    monkeypatch.setattr("dint.runtime.can_bind", lambda host, port: True)
+    monkeypatch.setattr("dint.runtime.probe", lambda url, timeout=1.5: False)
     monkeypatch.setattr(
         "dint.runtime.shutil.which",
         lambda name: "/bin/logbook-server" if name == "logbook-server" else None,
@@ -119,6 +122,8 @@ def test_ensure_serve_spawns(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DINT_HOME", str(tmp_path))
     monkeypatch.delenv("DINT_ROLE", raising=False)
     monkeypatch.setattr("dint.runtime.probe", lambda url, timeout=1.5: False)
+    monkeypatch.setattr("dint.runtime.serve_health", lambda: None)
+    monkeypatch.setattr("dint.runtime.can_bind", lambda host, port: True)
     monkeypatch.setattr("dint.runtime.wait_for", lambda url, timeout=12: True)
     calls: list[list[str]] = []
     monkeypatch.setattr(

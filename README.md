@@ -46,13 +46,16 @@ That starts logbook-server and a background `dint serve` if they are not running
 dint
 dint grok "Summarize this repo"
 dint start grok .
-dint send <chat_id> "Summarize this repo"
+dint send <chat> "Summarize this repo"
+dint last                 # latest reply, in full
+dint list <chat> --full   # every turn in full (--json for scripts)
 dint chats
-dint list <chat_id>
-dint show <chat_id>
+dint show <chat>
 ```
 
-Bare `dint` opens a chat in this folder (starts logbook + serve). Inside: `/engine`, `/job`, `/chats`, `/new`, `/help`. Any other `/line` (say `/login`) goes to the engine; `//help` sends a literal `/help`. `DINT_ENGINE` picks the default CLI. Logbook and `dint serve` keep running in the background.
+Bare `dint` opens a chat in this folder (starts logbook + serve). Inside: `/engine`, `/job`, `/chats`, `/new`, `/help`. Any other `/line` (say `/login`) goes to the engine; `//help` sends a literal `/help`. A pasted block is one prompt; end a typed line with `\` to continue it. `DINT_ENGINE` picks the default CLI. Logbook and `dint serve` keep running in the background.
+
+`<chat>` is a chat id, a unique prefix of one, or `last` (the newest chat, and the default for `last`, `list`, and `show`).
 
 Python:
 
@@ -74,7 +77,9 @@ dint serve
 dint job grok "What can you do?"
 # job    <logbook-id>
 # chat   <chat_id>
-dint list <chat_id>
+dint last <chat_id>
+
+dint job --wait grok "What can you do?"   # follow the job, print the reply
 ```
 
 From Logbook:
@@ -86,7 +91,9 @@ From Logbook:
 
 or `@test #job #grok Summarize this repo`.
 
-`dint serve` listens on `http://127.0.0.1:8787/webhook`. If register fails, start logbook-server with `LOGBOOK_WEBHOOK_URL=http://127.0.0.1:8787/webhook`. Completed turns are stored on `#chat-<id>` like a normal `send`. Ack is `#job-run` (not `#job`, so it does not loop).
+`dint serve` listens on `http://127.0.0.1:8787/webhook`. If register fails, start logbook-server with `LOGBOOK_WEBHOOK_URL=http://127.0.0.1:8787/webhook` and `LOGBOOK_WEBHOOK_SECRET` from `~/.dint/.env`. Completed turns are stored on `#chat-<id>` like a normal `send`. Ack is `#job-run` (not `#job`, so it does not loop).
+
+Serve only runs webhooks signed with `LOGBOOK_WEBHOOK_SECRET` (generated on first run). It reads the job back from Logbook by message id and never trusts a body sent in the request, and it turns away browser requests (an `Origin` header, a non-JSON body, or a foreign `Host`). After upgrading from 0.1.x, stop the old `dint serve`; `dint` warns while it is still running.
 
 Agents should use Logbook MCP (`post_message` / `get_messages`) rather than a dint MCP. The contract is in [`.grok/skills/dint-jobs/SKILL.md`](.grok/skills/dint-jobs/SKILL.md).
 
@@ -103,7 +110,7 @@ Each chat is a Codicent-style thread: the header is the root; every later messag
 | `LOGBOOK_PROJECT` | `dint` |
 | `LOGBOOK_TRANSPORT` | `rest` |
 | `DINT_JOBS_PORT` | `8787` |
-| `LOGBOOK_WEBHOOK_SECRET` | _(optional HMAC)_ |
+| `LOGBOOK_WEBHOOK_SECRET` | generated on first run (HMAC for `#job` webhooks) |
 
 ## License
 

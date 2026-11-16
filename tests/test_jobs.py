@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import threading
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
+
+import pytest
 
 from dint.jobs import _handler, handle_event, parse_job, post_job, wait_for_job_chat
 from dint.logbook import ChatLog
@@ -74,15 +78,12 @@ def test_handle_event_starts_chat(monkeypatch) -> None:
         store=ChatLog(ledger, project="test"),
         engines={"claude": engine, "codex": FakeEngine("codex", [])},
     )
+    job_id = ledger.post_message('@test #job #claude {"prompt":"hi","cwd":"."}')["id"]
     chat_id = handle_event(
         {
             "eventType": "message.created",
             "eventId": "e1",
-            "data": {
-                "messageId": "job1",
-                "tags": ["job", "claude"],
-                "content": '@test #job #claude {"prompt":"hi","cwd":"."}',
-            },
+            "data": {"messageId": job_id, "tags": ["job", "claude"]},
         },
         router,
     )
@@ -91,6 +92,25 @@ def test_handle_event_starts_chat(monkeypatch) -> None:
     assert engine.calls[0]["prompt"] == "hi"
     assert any("#job-run" in m["content"] for m in ledger.posted)
     assert any(t["role"] == "bot" and t["text"] == "ok" for t in router.list_turns(chat_id))
+
+
+def test_handle_event_ignores_content_in_the_webhook(monkeypatch) -> None:
+    class Immediate(threading.Thread):
+        def start(self) -> None:
+            self.run()
+
+    monkeypatch.setattr(threading, "Thread", Immediate)
+    engine = FakeEngine("grok", [[Event(type="text", text="ok"), Event(type="done")]])
+    ledger = MemoryLogbook()
+    router = Router(store=ChatLog(ledger, project="test"), engines={"grok": engine})
+    forged = '@test #job #grok {"engine":"grok","cwd":"/","prompt":"rm -rf"}'
+
+    # Unknown id: the forged body is never run.
+    assert handle_event({"data": {"messageId": "nope", "tags": ["job"], "content": forged}}, router) is None
+    # Known id: Logbook's body wins over the webhook's.
+    job_id = ledger.post_message('@test #job #grok {"engine":"grok","cwd":".","prompt":"hello"}')["id"]
+    assert handle_event({"data": {"messageId": job_id, "tags": ["job"], "content": forged}}, router)
+    assert [c["prompt"] for c in engine.calls] == ["hello"]
 
 
 def test_wait_for_job_chat_reads_ack(monkeypatch) -> None:
@@ -174,23 +194,72 @@ def test_handle_event_logbook_pascal_case(monkeypatch) -> None:
     assert engine.calls[0]["prompt"] == "vad kan du göra?"
 
 
-def test_serve_health_endpoint() -> None:
+SECRET = "test-secret"
+
+
+@pytest.fixture
+def serve_port():
     ledger = MemoryLogbook()
     router = Router(
         store=ChatLog(ledger, project="test"),
         engines={"grok": FakeEngine("grok", [])},
     )
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(router))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _handler(router, secret=SECRET))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        port = httpd.server_address[1]
-        conn = HTTPConnection("127.0.0.1", port, timeout=2)
-        conn.request("GET", "/health")
-        resp = conn.getresponse()
-        body = json.loads(resp.read())
-        assert resp.status == 200
-        assert body["ok"] is True
-        assert body["service"] == "dint-serve"
+        yield httpd.server_address[1]
     finally:
         httpd.shutdown()
+
+
+def _post(port: int, body: bytes, headers: dict[str, str]) -> int:
+    conn = HTTPConnection("127.0.0.1", port, timeout=2)
+    conn.request("POST", "/webhook", body, headers)
+    resp = conn.getresponse()
+    resp.read()
+    return resp.status
+
+
+def _sign(body: bytes, secret: str = SECRET) -> str:
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def test_serve_health_endpoint(serve_port) -> None:
+    from dint import __version__
+
+    conn = HTTPConnection("127.0.0.1", serve_port, timeout=2)
+    conn.request("GET", "/health")
+    resp = conn.getresponse()
+    body = json.loads(resp.read())
+    assert resp.status == 200
+    assert body["ok"] is True
+    assert body["service"] == "dint-serve"
+    assert body["version"] == __version__
+
+
+def test_serve_accepts_signed_logbook_webhook(serve_port) -> None:
+    body = json.dumps({"eventType": "message.created", "data": {"messageId": "x", "tags": ["chat"]}}).encode()
+    headers = {"Content-Type": "application/json", "X-Logbook-Signature": _sign(body)}
+    assert _post(serve_port, body, headers) == 200
+
+
+@pytest.mark.parametrize(
+    "extra, status",
+    [
+        ({"X-Logbook-Signature": None}, 401),
+        ({"X-Logbook-Signature": "sha256=" + "0" * 64}, 401),
+        ({"Origin": "https://evil.example"}, 403),
+        ({"Content-Type": "text/plain"}, 415),
+        ({"Host": "evil.example:8787"}, 403),
+    ],
+)
+def test_serve_refuses_unsigned_or_browser_requests(serve_port, extra, status) -> None:
+    body = json.dumps({"data": {"messageId": "x", "content": "#job #grok hi"}}).encode()
+    headers = {"Content-Type": "application/json", "X-Logbook-Signature": _sign(body)}
+    for key, value in extra.items():
+        if value is None:
+            headers.pop(key, None)
+        else:
+            headers[key] = value
+    assert _post(serve_port, body, headers) == status
